@@ -504,6 +504,116 @@ async function handleSyncMessage(msg) {
 }
 
 // ─────────────────────────────────────────────────────
+//  PLAYLIST  (persisted per room in localStorage)
+// ─────────────────────────────────────────────────────
+const PLAYLIST_KEY = `ourspace_playlist_${roomId}`;
+let playlist = [];
+
+function loadPlaylist() {
+    try { playlist = JSON.parse(localStorage.getItem(PLAYLIST_KEY) || '[]'); } catch (e) { playlist = []; }
+    renderPlaylist();
+}
+
+function savePlaylist() {
+    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
+}
+
+function renderPlaylist() {
+    const container = document.getElementById('playlistItems');
+    const empty = document.getElementById('playlistEmpty');
+    const count = document.getElementById('playlistCount');
+    count.textContent = playlist.length + (playlist.length === 1 ? ' song' : ' songs');
+    if (playlist.length === 0) {
+        container.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    container.innerHTML = playlist.map((item, i) => `
+        <div class="pl-item ${ytVideoId === item.videoId ? 'pl-item--active' : ''}" data-i="${i}">
+            <img class="pl-thumb" src="https://img.youtube.com/vi/${item.videoId}/mqdefault.jpg" alt="" loading="lazy" />
+            <div class="pl-title" title="${item.title}">${item.title}</div>
+            <div class="pl-btns">
+                <button class="pl-play" onclick="playFromPlaylist(${i})" title="Play">▶</button>
+                <button class="pl-del"  onclick="deleteFromPlaylist(${i})" title="Remove">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+document.getElementById('addToPlaylistBtn').addEventListener('click', async () => {
+    if (!ytVideoId) return;
+    if (playlist.find(p => p.videoId === ytVideoId)) { toast('Already in playlist!', 'info'); return; }
+    const title = ytTrackTitle.textContent && ytTrackTitle.textContent !== '—'
+        ? ytTrackTitle.textContent
+        : ytVideoId;
+    playlist.push({ videoId: ytVideoId, title, addedAt: Date.now() });
+    savePlaylist();
+    renderPlaylist();
+    toast('Added to playlist! 📋', 'success');
+});
+
+window.playFromPlaylist = function (i) {
+    const item = playlist[i];
+    if (!item) return;
+    loadYouTubeVideo(item.videoId, 0, true);
+    sendSync({ type: 'yt_load', videoId: item.videoId, sentBy: myName });
+};
+
+window.deleteFromPlaylist = function (i) {
+    playlist.splice(i, 1);
+    savePlaylist();
+    renderPlaylist();
+};
+
+// ─────────────────────────────────────────────────────
+//  CINEMA MODE — fullscreen + auto-hide UI on idle
+// ─────────────────────────────────────────────────────
+let cinemaActive = false;
+let cinemaTimer = null;
+
+const cinemaBtn = document.getElementById('cinemaBtn');
+cinemaBtn.addEventListener('click', toggleCinema);
+
+// Also toggle on F key
+document.addEventListener('keydown', e => {
+    if (e.key === 'f' || e.key === 'F') { if (!e.target.matches('input,textarea')) toggleCinema(); }
+});
+
+function toggleCinema() {
+    if (!cinemaActive) {
+        document.documentElement.requestFullscreen().catch(() => {
+            // Fullscreen blocked — still do UI hiding
+        });
+        cinemaActive = true;
+        document.body.classList.add('cinema');
+        cinemaBtn.textContent = '✕ Exit';
+        startCinemaTimer();
+        toast('Cinema mode — move your mouse to show controls 🎬', 'info', 3000);
+    } else {
+        exitCinema();
+    }
+}
+
+function exitCinema() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+    cinemaActive = false;
+    clearTimeout(cinemaTimer);
+    document.body.classList.remove('cinema', 'cinema-hidden');
+    cinemaBtn.textContent = '🎬';
+}
+
+function startCinemaTimer() {
+    clearTimeout(cinemaTimer);
+    document.body.classList.remove('cinema-hidden');
+    cinemaTimer = setTimeout(() => {
+        if (cinemaActive) document.body.classList.add('cinema-hidden');
+    }, 3000);
+}
+
+document.addEventListener('mousemove', () => { if (cinemaActive) startCinemaTimer(); });
+document.addEventListener('touchstart', () => { if (cinemaActive) startCinemaTimer(); });
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && cinemaActive) exitCinema(); });
+
+// ─────────────────────────────────────────────────────
 //  BOOT
 // ─────────────────────────────────────────────────────
 (async () => {
@@ -511,8 +621,10 @@ async function handleSyncMessage(msg) {
     peerIdA = hash + 'a';
     peerIdB = hash + 'b';
     await setupPeer();
+    loadPlaylist();
 
     const sendName = () => { if (dataConn && dataConn.open) sendSync({ type: 'peer_name', name: myName }); };
     setTimeout(sendName, 1500);
     setTimeout(sendName, 3500);
 })();
+

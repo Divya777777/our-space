@@ -39,6 +39,7 @@
         </div>
         <div class="header-right">
             <span class="user-name-display" id="myNameDisplay"></span>
+            <button class="cinema-btn" id="cinemaBtn" title="Cinema mode (F)">🎬</button>
             <button class="leave-btn" id="leaveBtn">Leave 🚀</button>
         </div>
     </header>
@@ -186,6 +187,19 @@
                     <span class="sync-dot"></span>
                     <span id="ytSyncText">Listening together 🌙</span>
                 </div>
+
+                <!-- Add to playlist -->
+                <button class="add-playlist-btn" id="addToPlaylistBtn">+ Add to Playlist</button>
+            </div>
+
+            <!-- Playlist -->
+            <div class="playlist-section" id="playlistSection">
+                <div class="playlist-header">
+                    <span class="playlist-title">📋 Playlist</span>
+                    <span class="playlist-count" id="playlistCount">0 songs</span>
+                </div>
+                <div class="playlist-empty" id="playlistEmpty">No songs yet — add some! 🎵</div>
+                <div class="playlist-items" id="playlistItems"></div>
             </div>
         </section>
 
