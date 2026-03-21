@@ -170,6 +170,7 @@ let localStream = null;
 let isMuted = false;
 let isVideoOff = false;
 let isInCall = false;
+let audioPreview = null; // For non-Premium: plays 30-second Spotify preview
 
 // Derive a deterministic peer ID from room code.
 // PeerJS only accepts alphanumeric IDs, so we hash the room string to hex.
@@ -227,6 +228,9 @@ async function setupPeer() {
                 // Open data connection to A
                 dataConn = peer.connect(peerIdA, { reliable: true });
                 setupDataConn();
+
+                // Peer B MUST listen for incoming calls from A
+                peer.on('call', answerCall);
 
                 toast('Partner found! Starting connection…', 'info');
             } catch (err2) {
@@ -292,23 +296,27 @@ async function startCall() {
         startCallBtn.classList.add('end-call');
         isInCall = true;
 
-        // Call the other peer
-        const remotePeerId = peer.id === peerIdA ? peerIdB : peerIdA;
-        const call = peer.call(remotePeerId, localStream);
-        if (call) {
-            handleCallStream(call);
-        }
+        // Signal partner we are ready
+        sendSync({ type: 'call_request' });
 
-        // Also listen for incoming call (both might call simultaneously)
-        peer.on('call', call => {
-            call.answer(localStream);
-            handleCallStream(call);
-        });
+        // Rule: Peer A always initiates the WebRTC call, Peer B answers
+        // This avoids both sides calling each other simultaneously
+        if (peer.id === peerIdA) {
+            attemptCall(); // A calls B
+        }
+        // Peer B: peer.on('call', answerCall) set in setupPeer handles incoming
 
     } catch (err) {
         toast('Could not access camera/mic. Check permissions.', 'error');
         console.error(err);
     }
+}
+
+// Peer A calls Peer B once local media is ready
+function attemptCall() {
+    if (!localStream) return;
+    const call = peer.call(peerIdB, localStream);
+    if (call) handleCallStream(call);
 }
 
 function answerCall(call) {
@@ -538,21 +546,10 @@ function initSpotifySDK() {
         if (!state) return;
         updatePlayerUI(state);
 
-        // Broadcast state to partner
+        // Broadcast state + preview URL to partner (preview works for non-Premium)
         if (!isSyncing) {
             const track = state.track_window.current_track;
-            sendSync({
-                type: 'spotify_state',
-                trackUri: track.uri,
-                trackName: track.name,
-                artistName: track.artists.map(a => a.name).join(', '),
-                albumName: track.album.name,
-                albumImage: track.album.images[0]?.url || '',
-                positionMs: state.position,
-                durationMs: state.duration,
-                paused: state.paused,
-                sentBy: myName,
-            });
+            fetchPreviewAndSync(track, state);
         }
     });
 
@@ -582,6 +579,33 @@ async function transferPlayback(deviceId) {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({ device_ids: [deviceId], play: false }),
+    });
+}
+
+// Fetch the 30-second preview URL then broadcast all state to partner
+async function fetchPreviewAndSync(track, state) {
+    let previewUrl = '';
+    try {
+        const r = await fetch(`https://api.spotify.com/v1/tracks/${track.id}`, {
+            headers: { 'Authorization': 'Bearer ' + spotifyToken },
+        });
+        const data = await r.json();
+        previewUrl = data.preview_url || '';
+    } catch (e) { /* ignore */ }
+
+    sendSync({
+        type: 'spotify_state',
+        trackUri: track.uri,
+        trackId: track.id,
+        trackName: track.name,
+        artistName: track.artists.map(a => a.name).join(', '),
+        albumName: track.album.name,
+        albumImage: track.album.images[0]?.url || '',
+        positionMs: state.position,
+        durationMs: state.duration,
+        paused: state.paused,
+        previewUrl: previewUrl,
+        sentBy: myName,
     });
 }
 
@@ -639,8 +663,14 @@ function msToTime(ms) {
 
 // ── Controls ──────────────────────────────────────────
 playPauseBtn.addEventListener('click', () => {
-    if (!spotifySDKPlayer) return;
-    spotifySDKPlayer.togglePlay();
+    if (spotifySDKPlayer && isSpotifyReady) {
+        spotifySDKPlayer.togglePlay();
+    } else if (audioPreview) {
+        // Non-Premium: control the preview clip
+        if (audioPreview.paused) { audioPreview.play(); isPlaying = true; }
+        else { audioPreview.pause(); isPlaying = false; }
+        updatePlayPauseIcon();
+    }
 });
 
 prevBtn.addEventListener('click', () => {
@@ -654,8 +684,8 @@ nextBtn.addEventListener('click', () => {
 });
 
 volumeSlider.addEventListener('input', () => {
-    if (!spotifySDKPlayer) return;
-    spotifySDKPlayer.setVolume(volumeSlider.value / 100);
+    if (spotifySDKPlayer) spotifySDKPlayer.setVolume(volumeSlider.value / 100);
+    if (audioPreview) audioPreview.volume = volumeSlider.value / 100;
 });
 
 // Seek on click
@@ -673,10 +703,35 @@ progressBarBg.addEventListener('click', e => {
 async function handleSyncMessage(msg) {
     if (!msg || !msg.type) return;
 
+    if (msg.type === 'call_request') {
+        if (peer.id === peerIdA) {
+            // Partner (B) is ready — if we have media, call; otherwise start call
+            if (localStream) {
+                attemptCall();
+            } else {
+                startCall();
+            }
+        } else {
+            // We are B — prepare media so we can answer A's call
+            if (!localStream) {
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    myVideo.srcObject = localStream;
+                    myVideo.classList.add('active');
+                    myPlaceholder.style.display = 'none';
+                    isInCall = true;
+                    startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
+                    startCallBtn.classList.add('end-call');
+                } catch (e) { toast('Could not access camera/mic.', 'error'); }
+            }
+            // peer.on('call', answerCall) in setupPeer handles the incoming call from A
+        }
+        return;
+    }
+
     if (msg.type === 'spotify_state') {
         isSyncing = true;
 
-        // Update UI with what partner is playing
         nowPlayingWho.textContent = `${msg.sentBy} is playing`;
         trackName.textContent = msg.trackName;
         trackArtist.textContent = msg.artistName;
@@ -690,16 +745,18 @@ async function handleSyncMessage(msg) {
         startProgressTracking();
         syncText.textContent = `Synced with ${msg.sentBy} 🌙`;
 
-        // If we have our own Spotify connected → play same track
+        spotifyDisconnected.style.display = 'none';
+        spotifyPlayer.style.display = 'flex';
+
         if (isSpotifyReady && spotifyToken && spotifyDeviceId) {
+            // Both have Premium — sync full playback
             if (msg.trackUri !== currentTrackUri || Math.abs(msg.positionMs - currentPositionMs) > 3000) {
                 await playTrackOnDevice(msg.trackUri, msg.positionMs, !msg.paused);
             }
+        } else if (msg.previewUrl) {
+            // No Premium on this side — play the 30-second preview clip
+            playPreview(msg.previewUrl, msg.paused);
         }
-
-        // Show player panel even if not locally connected
-        spotifyDisconnected.style.display = 'none';
-        spotifyPlayer.style.display = 'flex';
 
         setTimeout(() => { isSyncing = false; }, 500);
     }
@@ -707,6 +764,22 @@ async function handleSyncMessage(msg) {
     if (msg.type === 'peer_name') {
         partnerLabel.textContent = msg.name + ' 💫';
         partnerPlaceholderName.textContent = msg.name;
+    }
+}
+
+// Play the 30-second Spotify preview for non-Premium users
+function playPreview(url, paused) {
+    if (!url) return;
+    if (!audioPreview) {
+        audioPreview = new Audio();
+        audioPreview.volume = volumeSlider.value / 100;
+        audioPreview.addEventListener('ended', () => { isPlaying = false; updatePlayPauseIcon(); });
+    }
+    if (audioPreview.src !== url) { audioPreview.src = url; audioPreview.load(); }
+    if (!paused) {
+        audioPreview.play().catch(() => toast('▶ Tap Play to listen along 🎵', 'info', 4000));
+    } else {
+        audioPreview.pause();
     }
 }
 
