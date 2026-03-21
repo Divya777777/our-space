@@ -6,7 +6,7 @@
 // ─── CONFIG ──────────────────────────────────────────
 // Replace with your Spotify Client ID from developer.spotify.com
 const SPOTIFY_CLIENT_ID = 'e67c927aa02344298493bada37f2c0e5';
-const REDIRECT_URI = window.location.origin + window.location.pathname;
+const REDIRECT_URI = 'https://divya777777.github.io/our-space/room.html';
 const SCOPES = [
     'streaming',
     'user-read-email',
