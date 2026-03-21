@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Our Space 🌙</title>
+  <meta name="description" content="A private space just for the two of us — voice chat and synced music under the stars." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="index-page">
+
+  <!-- Star canvas -->
+  <canvas id="starCanvas"></canvas>
+
+  <!-- Shooting stars -->
+  <div class="shooting-stars" id="shootingStars"></div>
+
+  <!-- Moon -->
+  <div class="moon">
+    <div class="moon-glow"></div>
+    <div class="moon-craters">
+      <div class="crater c1"></div>
+      <div class="crater c2"></div>
+      <div class="crater c3"></div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="hero">
+    <div class="hero-label">✦ A place just for us ✦</div>
+    <h1 class="hero-title">Our Space</h1>
+    <p class="hero-subtitle">Voice chat + synced music, under the stars 🌙</p>
+
+    <div class="join-card glass-card">
+      <div class="join-card-inner">
+        <div class="card-icon">💫</div>
+        <h2 class="card-title">Enter Our Space</h2>
+        <p class="card-desc">Share a room code with each other and connect</p>
+
+        <div class="input-group">
+          <label for="nameInput" class="input-label">Your Name</label>
+          <div class="input-wrapper">
+            <span class="input-icon">🌸</span>
+            <input
+              id="nameInput"
+              type="text"
+              class="glass-input"
+              placeholder="Your name..."
+              maxlength="20"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="roomInput" class="input-label">Room Code</label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔑</span>
+            <input
+              id="roomInput"
+              type="text"
+              class="glass-input"
+              placeholder="e.g. moonlight42"
+              maxlength="30"
+              autocomplete="off"
+            />
+          </div>
+          <button class="generate-btn" id="generateBtn" title="Generate random code">✨ Generate</button>
+        </div>
+
+        <button class="enter-btn" id="enterBtn">
+          <span>Enter Our Space</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+
+        <div class="divider">
+          <span>or</span>
+        </div>
+
+        <p class="hint-text">
+          🎵 To use synced Spotify, you'll need to<br/>
+          <strong>Connect Spotify</strong> once inside the room.
+        </p>
+      </div>
+    </div>
+
+    <div class="floating-notes">
+      <span class="note n1">♪</span>
+      <span class="note n2">♫</span>
+      <span class="note n3">♩</span>
+      <span class="note n4">♬</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
