@@ -147,6 +147,7 @@
 
                 <!-- YouTube iframe player -->
                 <div class="yt-player-wrapper" id="ytPlayerWrapper">
+                    <button class="yt-collapse-btn" id="ytCollapseBtn" title="Minimize YouTube">✕</button>
                     <div id="ytPlayer"></div>
                 </div>
 
@@ -207,9 +208,19 @@
                 </div>
                 <div class="playlist-header">
                     <div class="playlist-title-row">
-                        <select class="playlist-dropdown" id="playlistDropdown">
-                            <option value="default">Room Playlist</option>
-                        </select>
+                        <div class="dropdown-wrapper">
+                            <select class="playlist-dropdown" id="playlistDropdown">
+                                <option value="default">Room Playlist</option>
+                            </select>
+                        </div>
+                        <div class="playlist-menu-wrapper">
+                            <button class="pl-menu-btn" id="plMenuBtn" title="Playlist Options">⋮</button>
+                            <div class="pl-menu-popup" id="plMenuPopup">
+                                <button id="plMenuRename">✏️ Rename</button>
+                                <button id="plMenuMove">↔️ Move to Personal</button>
+                                <button id="plMenuDelete" class="danger">🗑️ Delete</button>
+                            </div>
+                        </div>
                         <button class="add-new-pl-btn" id="newPlaylistBtn" title="Create new playlist">+</button>
                     </div>
                     <span class="playlist-count" id="playlistCount">0 songs</span>

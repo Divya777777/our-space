@@ -170,6 +170,9 @@ document.getElementById('ytExpandBtn').addEventListener('click', () => {
     });
 });
 
+const ytCollapseBtn = document.getElementById('ytCollapseBtn');
+if (ytCollapseBtn) ytCollapseBtn.addEventListener('click', collapseAll);
+
 document.querySelectorAll('.expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const targetId = btn.getAttribute('data-target');
@@ -905,6 +908,93 @@ window.deleteFromPlaylist = function (i) {
     }
 };
 
+// ── Playlist Management Menu ────────────────────────────────
+const plMenuBtn = document.getElementById('plMenuBtn');
+const plMenuPopup = document.getElementById('plMenuPopup');
+
+if (plMenuBtn && plMenuPopup) {
+    plMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        plMenuPopup.classList.toggle('show');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!plMenuPopup.contains(e.target) && e.target !== plMenuBtn) {
+            plMenuPopup.classList.remove('show');
+        }
+    });
+
+    document.getElementById('plMenuRename').addEventListener('click', () => {
+        plMenuPopup.classList.remove('show');
+        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
+            toast('Cannot rename default playlist.', 'info');
+            return;
+        }
+        const newName = prompt(`Rename "${activePlaylistName}" to:`, activePlaylistName);
+        if (newName && newName.trim() && newName !== activePlaylistName) {
+            const cleanName = newName.trim();
+            const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+            if (dict[cleanName]) {
+                toast('Name already exists!', 'error');
+                return;
+            }
+            dict[cleanName] = dict[activePlaylistName];
+            delete dict[activePlaylistName];
+            activePlaylistName = cleanName;
+            savePlaylist();
+            renderPlaylist();
+            if (activePlaylistTab === 'room') sendSync({ type: 'playlist_sync', roomPlaylists });
+            toast('Playlist renamed!', 'success');
+        }
+    });
+
+    document.getElementById('plMenuMove').addEventListener('click', () => {
+        plMenuPopup.classList.remove('show');
+        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
+            toast('Cannot move default playlist.', 'info');
+            return;
+        }
+        const sourceDict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+        const targetDict = activePlaylistTab === 'room' ? personalPlaylists : roomPlaylists;
+        const targetTab = activePlaylistTab === 'room' ? 'personal' : 'room';
+
+        if (targetDict[activePlaylistName]) {
+            toast('A playlist with this name already exists in destination.', 'error');
+            return;
+        }
+
+        targetDict[activePlaylistName] = sourceDict[activePlaylistName];
+        delete sourceDict[activePlaylistName];
+
+        savePlaylist();
+
+        if (activePlaylistTab === 'room' || targetTab === 'room') {
+            sendSync({ type: 'playlist_sync', roomPlaylists });
+        }
+
+        activePlaylistTab = targetTab;
+        renderPlaylist();
+        toast('Playlist moved!', 'success');
+    });
+
+    document.getElementById('plMenuDelete').addEventListener('click', () => {
+        plMenuPopup.classList.remove('show');
+        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
+            toast('Cannot delete default playlist.', 'info');
+            return;
+        }
+        if (confirm(`Are you sure you want to delete "${activePlaylistName}"?`)) {
+            const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+            delete dict[activePlaylistName];
+            activePlaylistName = activePlaylistTab === 'room' ? "Room Playlist" : "My Playlist";
+            savePlaylist();
+            renderPlaylist();
+            if (activePlaylistTab === 'room') sendSync({ type: 'playlist_sync', roomPlaylists });
+            toast('Playlist deleted.', 'info');
+        }
+    });
+}
+
 // ─────────────────────────────────────────────────────
 //  CINEMA MODE — fullscreen + auto-hide UI on idle
 // ─────────────────────────────────────────────────────
@@ -914,9 +1004,14 @@ let cinemaTimer = null;
 const cinemaBtn = document.getElementById('cinemaBtn');
 cinemaBtn.addEventListener('click', toggleCinema);
 
-// Also toggle on F key
+// Also toggle on F key, and handle Escape for un-expanding
 document.addEventListener('keydown', e => {
     if (e.key === 'f' || e.key === 'F') { if (!e.target.matches('input,textarea')) toggleCinema(); }
+    if (e.key === 'Escape') {
+        if (document.body.classList.contains('has-expanded')) {
+            collapseAll();
+        }
+    }
 });
 
 function toggleCinema() {
