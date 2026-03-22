@@ -741,8 +741,10 @@ body {
 .yt-player-wrapper.expanded {
   position: fixed;
   inset: 80px 16px 16px;
+  width: auto;
+  height: auto;
   z-index: 200;
-  aspect-ratio: unset;
+  aspect-ratio: unset !important;
   border-radius: var(--radius-lg);
   animation: expandIn 0.3s ease;
   background: #000;
