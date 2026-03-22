@@ -395,7 +395,15 @@ async function startCall() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
             video: true,
-            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+            audio: {
+                noiseSuppression: true,
+                echoCancellation: true,
+                autoGainControl: true,
+                googEchoCancellation: true,
+                googAutoGainControl: true,
+                googNoiseSuppression: true,
+                googHighpassFilter: true
+            }
         });
         myVideo.srcObject = localStream;
         myVideo.classList.add('active');
@@ -708,7 +716,15 @@ async function handleSyncMessage(msg) {
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({
                         video: true,
-                        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+                        audio: {
+                            noiseSuppression: true,
+                            echoCancellation: true,
+                            autoGainControl: true,
+                            googEchoCancellation: true,
+                            googAutoGainControl: true,
+                            googNoiseSuppression: true,
+                            googHighpassFilter: true
+                        }
                     });
                     myVideo.srcObject = localStream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
                     isInCall = true;
