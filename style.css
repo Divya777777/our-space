@@ -2278,7 +2278,106 @@ body {
 /* ───────────────────────────────────────────────────────── */
 
 /* Image Modal */
+/* ── Auth Request Modal (Knock Knock!) ──────────────────── */
+.auth-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeInOverlay 0.3s ease;
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.auth-box {
+  background: linear-gradient(135deg, rgba(30, 20, 60, 0.97), rgba(15, 10, 40, 0.97));
+  border: 1px solid rgba(180, 140, 255, 0.3);
+  border-radius: 20px;
+  padding: 36px 40px;
+  width: min(420px, 90vw);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(140, 80, 255, 0.15);
+  animation: slideUpCard 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-align: center;
+}
+
+@keyframes slideUpCard {
+  from {
+    transform: translateY(30px) scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.auth-box h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  color: #fff;
+  margin: 0 0 8px;
+}
+
+.auth-box p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  margin: 0 0 24px;
+}
+
+#authAcceptBtn {
+  padding: 12px 20px;
+  border-radius: 40px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  background: linear-gradient(135deg, #1a8a3f, #147c35);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(29, 185, 84, 0.35);
+}
+
+#authAcceptBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(29, 185, 84, 0.5);
+}
+
+#authRejectBtn {
+  padding: 12px 20px;
+  border-radius: 40px;
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  background: rgba(255, 60, 60, 0.12);
+  color: #ff6b6b;
+}
+
+#authRejectBtn:hover {
+  background: rgba(255, 60, 60, 0.25);
+  transform: translateY(-2px);
+}
+
+/* ── Image Modal ─────────────────────────────────────────── */
 .image-modal {
+
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.9);
