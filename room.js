@@ -135,8 +135,40 @@ function collapseAll() {
     clearAncestorOverrides();
     document.querySelectorAll('.expanded, .pip').forEach(el => el.classList.remove('expanded', 'pip'));
     document.querySelectorAll('.expand-btn').forEach(b => { b.textContent = '⛶'; b.title = 'Maximize'; });
+
+    const ytBtn = document.getElementById('ytExpandBtn');
+    if (ytBtn) {
+        ytBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+        ytBtn.title = 'Maximize';
+    }
+
     document.body.classList.remove('has-expanded');
 }
+
+// Custom listener for the ytExpandBtn 
+document.getElementById('ytExpandBtn').addEventListener('click', () => {
+    const panel = document.getElementById('ytPlayerWrapper');
+    if (panel.classList.contains('expanded')) {
+        collapseAll();
+        return;
+    }
+    collapseAll();
+    overrideAncestors(panel);
+    panel.classList.add('expanded');
+
+    const ytBtn = document.getElementById('ytExpandBtn');
+    ytBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`;
+    ytBtn.title = 'Minimize';
+
+    document.body.classList.add('has-expanded');
+
+    // PIP video panels
+    [myVideoPanel, partnerVideoPanel].forEach(vp => {
+        originalParents.set(vp, { parent: vp.parentNode, next: vp.nextSibling });
+        document.body.appendChild(vp);
+        vp.classList.add('pip');
+    });
+});
 
 document.querySelectorAll('.expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -604,7 +636,7 @@ async function handleSyncMessage(msg) {
             sendSync({ type: 'peer_name', name: myName });
             // Share our full playlist so partner sees everything we've saved
             if (playlist.length > 0) {
-                sendSync({ type: 'playlist_sync', playlist });
+                sendSync({ type: 'playlist_sync', roomPlaylists });
             }
         }
         return;
@@ -633,31 +665,48 @@ async function handleSyncMessage(msg) {
 
     // ── Playlist sync from partner ─────────────────────────
     if (msg.type === 'playlist_sync') {
-        // Merge: add any songs from partner we don't already have
-        let changed = false;
-        for (const item of (msg.playlist || [])) {
-            if (!playlist.find(p => p.videoId === item.videoId)) {
-                playlist.push(item);
-                changed = true;
+        if (msg.roomPlaylists) {
+            // merge or replace
+            for (const [name, list] of Object.entries(msg.roomPlaylists)) {
+                if (!roomPlaylists[name]) roomPlaylists[name] = [];
+                for (const item of list) {
+                    if (!roomPlaylists[name].find(p => p.videoId === item.videoId)) {
+                        roomPlaylists[name].push(item);
+                    }
+                }
             }
+            savePlaylist(); renderPlaylist(); toast('Playlists synced 📋', 'info');
+        } else if (msg.playlist) {
+            // legacy array merge to "Room Playlist"
+            if (!roomPlaylists["Room Playlist"]) roomPlaylists["Room Playlist"] = [];
+            for (const item of msg.playlist) {
+                if (!roomPlaylists["Room Playlist"].find(p => p.videoId === item.videoId)) {
+                    roomPlaylists["Room Playlist"].push(item);
+                }
+            }
+            savePlaylist(); renderPlaylist(); toast('Playlists synced 📋', 'info');
         }
-        if (changed) { savePlaylist(); renderPlaylist(); toast('Playlist synced 📋', 'info'); }
         return;
     }
 
     if (msg.type === 'playlist_add') {
-        if (msg.item && !playlist.find(p => p.videoId === msg.item.videoId)) {
-            playlist.push(msg.item);
+        const name = msg.playlistName || "Room Playlist";
+        if (!roomPlaylists[name]) roomPlaylists[name] = [];
+        if (msg.item && !roomPlaylists[name].find(p => p.videoId === msg.item.videoId)) {
+            roomPlaylists[name].push(msg.item);
             savePlaylist();
             renderPlaylist();
-            toast(`${msg.item.title.slice(0, 30)}… added to playlist 🎵`, 'info');
+            toast(`${msg.item.title.slice(0, 30)}… added to ${name} 🎵`, 'info');
         }
         return;
     }
 
     if (msg.type === 'playlist_remove') {
-        const idx = playlist.findIndex(p => p.videoId === msg.videoId);
-        if (idx !== -1) { playlist.splice(idx, 1); savePlaylist(); renderPlaylist(); }
+        const name = msg.playlistName || "Room Playlist";
+        if (roomPlaylists[name]) {
+            const idx = roomPlaylists[name].findIndex(p => p.videoId === msg.videoId);
+            if (idx !== -1) { roomPlaylists[name].splice(idx, 1); savePlaylist(); renderPlaylist(); }
+        }
         return;
     }
 
@@ -707,36 +756,66 @@ async function handleSyncMessage(msg) {
 // ─────────────────────────────────────────────────────
 const PLAYLIST_KEY = `ourspace_playlist_${roomId}`;
 const PERSONAL_PLAYLIST_KEY = 'ourspace_personal_playlist';
-let playlist = []; // Room playlist
-let personalPlaylist = []; // Personal playlist
+
+let roomPlaylists = { "Room Playlist": [] };
+let personalPlaylists = { "My Playlist": [] };
 let activePlaylistTab = 'room'; // 'room' | 'personal'
+let activePlaylistName = 'Room Playlist';
 
 function loadPlaylist() {
-    try { playlist = JSON.parse(localStorage.getItem(PLAYLIST_KEY) || '[]'); } catch (e) { playlist = []; }
-    try { personalPlaylist = JSON.parse(localStorage.getItem(PERSONAL_PLAYLIST_KEY) || '[]'); } catch (e) { personalPlaylist = []; }
+    try {
+        const parsedRoom = JSON.parse(localStorage.getItem(PLAYLIST_KEY));
+        if (Array.isArray(parsedRoom)) roomPlaylists = { "Room Playlist": parsedRoom };
+        else if (parsedRoom && typeof parsedRoom === 'object') roomPlaylists = parsedRoom;
+    } catch (e) { }
+
+    try {
+        const parsedPersonal = JSON.parse(localStorage.getItem(PERSONAL_PLAYLIST_KEY));
+        if (Array.isArray(parsedPersonal)) personalPlaylists = { "My Playlist": parsedPersonal };
+        else if (parsedPersonal && typeof parsedPersonal === 'object') personalPlaylists = parsedPersonal;
+    } catch (e) { }
+
+    ensureActivePlaylist();
     renderPlaylist();
 }
 
-function savePlaylist() {
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
-    localStorage.setItem(PERSONAL_PLAYLIST_KEY, JSON.stringify(personalPlaylist));
+function ensureActivePlaylist() {
+    if (Object.keys(roomPlaylists).length === 0) roomPlaylists["Room Playlist"] = [];
+    if (Object.keys(personalPlaylists).length === 0) personalPlaylists["My Playlist"] = [];
+
+    const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+    if (!dict[activePlaylistName]) {
+        activePlaylistName = Object.keys(dict)[0];
+    }
 }
 
-function getActivePlaylist() {
-    return activePlaylistTab === 'room' ? playlist : personalPlaylist;
+function savePlaylist() {
+    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(roomPlaylists));
+    localStorage.setItem(PERSONAL_PLAYLIST_KEY, JSON.stringify(personalPlaylists));
+}
+
+function getActiveList() {
+    ensureActivePlaylist();
+    const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+    return dict[activePlaylistName];
 }
 
 function renderPlaylist() {
-    const list = getActivePlaylist();
+    ensureActivePlaylist();
+    const list = getActiveList();
     const container = document.getElementById('playlistItems');
     const empty = document.getElementById('playlistEmpty');
     const count = document.getElementById('playlistCount');
-    const title = document.getElementById('playlistTitle');
+    const dropdown = document.getElementById('playlistDropdown');
 
-    if (title) title.textContent = activePlaylistTab === 'room' ? 'Room Playlist' : 'Personal Playlist';
-    count.textContent = list.length + (list.length === 1 ? ' song' : ' songs');
+    if (count) count.textContent = list.length + (list.length === 1 ? ' song' : ' songs');
 
     document.querySelectorAll('.pl-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activePlaylistTab));
+
+    const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+    if (dropdown) {
+        dropdown.innerHTML = Object.keys(dict).map(name => `<option value="${name}" ${name === activePlaylistName ? 'selected' : ''}>${name}</option>`).join('');
+    }
 
     if (list.length === 0) {
         container.innerHTML = ''; empty.style.display = 'block'; return;
@@ -758,13 +837,37 @@ function renderPlaylist() {
 document.querySelectorAll('.pl-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         activePlaylistTab = tab.dataset.tab;
+        ensureActivePlaylist();
         renderPlaylist();
     });
 });
 
+document.getElementById('playlistDropdown').addEventListener('change', (e) => {
+    activePlaylistName = e.target.value;
+    renderPlaylist();
+});
+
+document.getElementById('newPlaylistBtn').addEventListener('click', () => {
+    const name = prompt("Enter new playlist name:");
+    if (name && name.trim()) {
+        const cleanName = name.trim();
+        if (activePlaylistTab === 'room') {
+            if (!roomPlaylists[cleanName]) roomPlaylists[cleanName] = [];
+        } else {
+            if (!personalPlaylists[cleanName]) personalPlaylists[cleanName] = [];
+        }
+        activePlaylistName = cleanName;
+        savePlaylist();
+        renderPlaylist();
+        if (activePlaylistTab === 'room') {
+            sendSync({ type: 'playlist_sync', roomPlaylists });
+        }
+    }
+});
+
 document.getElementById('addToPlaylistBtn').addEventListener('click', async () => {
     if (!ytVideoId) return;
-    const list = getActivePlaylist();
+    const list = getActiveList();
     if (list.find(p => p.videoId === ytVideoId)) { toast('Already in playlist!', 'info'); return; }
 
     const titleEL = document.getElementById('ytTrackTitle');
@@ -777,20 +880,20 @@ document.getElementById('addToPlaylistBtn').addEventListener('click', async () =
 
     // Sync to partner only if acting on Room playlist
     if (activePlaylistTab === 'room') {
-        sendSync({ type: 'playlist_add', item });
+        sendSync({ type: 'playlist_add', item, playlistName: activePlaylistName });
     }
-    toast(`Added to ${activePlaylistTab === 'room' ? 'Room' : 'Personal'} Playlist! 📋`, 'success');
+    toast(`Added to ${activePlaylistName} 📋`, 'success');
 });
 
 window.playFromPlaylist = function (i) {
-    const item = getActivePlaylist()[i];
+    const item = getActiveList()[i];
     if (!item) return;
     loadYouTubeVideo(item.videoId, 0, true);
     sendSync({ type: 'yt_load', videoId: item.videoId, sentBy: myName });
 };
 
 window.deleteFromPlaylist = function (i) {
-    const list = getActivePlaylist();
+    const list = getActiveList();
     const removed = list[i];
     list.splice(i, 1);
     savePlaylist();
@@ -798,7 +901,7 @@ window.deleteFromPlaylist = function (i) {
 
     // Sync removal to partner only if acting on Room playlist
     if (activePlaylistTab === 'room' && removed) {
-        sendSync({ type: 'playlist_remove', videoId: removed.videoId });
+        sendSync({ type: 'playlist_remove', videoId: removed.videoId, playlistName: activePlaylistName });
     }
 };
 
