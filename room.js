@@ -184,6 +184,18 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
     });
 });
 
+// Allow clicking a PIP to swap and maximize it instead
+[myVideoPanel, partnerVideoPanel].forEach(panel => {
+    panel.addEventListener('click', (e) => {
+        if (panel.classList.contains('pip')) {
+            // Find the expand button for this panel and click it
+            const btn = panel.querySelector('.expand-btn');
+            if (btn) btn.click();
+        }
+    });
+});
+
+
 
 // ─── DOM REFS ─────────────────────────────────────────
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
@@ -344,7 +356,10 @@ startCallBtn.addEventListener('click', () => {
 
 async function startCall() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+        });
         myVideo.srcObject = localStream;
         myVideo.classList.add('active');
         myPlaceholder.style.display = 'none';
@@ -369,7 +384,10 @@ function answerCall(call) {
         call.answer(localStream);
         handleCallStream(call);
     } else {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+        navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+        }).then(stream => {
             localStream = stream;
             myVideo.srcObject = stream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
             isInCall = true;
@@ -599,7 +617,10 @@ async function handleSyncMessage(msg) {
         } else {
             if (!localStream) {
                 try {
-                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+                    });
                     myVideo.srcObject = localStream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
                     isInCall = true;
                     startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
