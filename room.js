@@ -641,15 +641,50 @@ async function handleSyncMessage(msg) {
             if (playlist.length > 0) {
                 sendSync({ type: 'playlist_sync', roomPlaylists });
             }
+            // Sync our local Chat History to partner (in case they joined from a new device)
+            if (chatDB_ready) {
+                const tx = chatDB.transaction('messages', 'readonly');
+                const req = tx.objectStore('messages').getAll();
+                req.onsuccess = () => {
+                    if (req.result && req.result.length > 0) {
+                        sendSync({ type: 'chat_history_sync', messages: req.result });
+                    }
+                };
+            }
         }
     }
 
+    // ── Secure Chat History Sync ──────────────────────────────
+    if (msg.type === 'chat_history_sync') {
+        if (!chatDB_ready || !msg.messages || msg.messages.length === 0) return;
+
+        const tx = chatDB.transaction('messages', 'readwrite');
+        const store = tx.objectStore('messages');
+        let addedNew = false;
+
+        msg.messages.forEach(chatMsg => {
+            const req = store.get(chatMsg.id);
+            req.onsuccess = () => {
+                if (!req.result) {
+                    store.put(chatMsg);
+                    addedNew = true;
+                }
+            };
+        });
+
+        tx.oncomplete = () => {
+            if (addedNew) {
+                loadChatHistory();
+                toast('Chat history securely synced from partner device! 🔄', 'success');
+            }
+        };
+        return;
+    }
 
     // ── Secure Chat Messaging ─────────────────────────────────
     if (msg.type === 'chat_msg') {
         const chatMsg = msg.message;
         chatMsg.senderLabel = msg.sentBy || "Partner";
-        chatMsg.sender = 'partner';
         // Check for duplicates
         if (!chatDB_ready || !document.querySelector(`[data-chat-id="${chatMsg.id}"]`)) {
             appendChatMessage(chatMsg, true);

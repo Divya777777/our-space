@@ -1597,15 +1597,16 @@ body {
   position: relative;
   display: inline-flex;
   align-items: center;
+  max-width: 170px;
 }
 
 .dropdown-wrapper::after {
   content: "▾";
   position: absolute;
-  right: 0;
+  right: 6px;
   color: var(--accent-moon);
   pointer-events: none;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   top: 50%;
   transform: translateY(-50%);
 }
@@ -1620,9 +1621,13 @@ body {
   border: none;
   outline: none;
   cursor: pointer;
-  padding: 2px 24px 2px 0;
+  padding: 2px 24px 2px 4px;
   appearance: none;
   -webkit-appearance: none;
+  width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .playlist-dropdown option {
