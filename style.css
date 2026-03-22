@@ -737,19 +737,7 @@ body {
 }
 
 /* ── Expanded state ───────────────────────────────── */
-.video-panel.expanded {
-  position: fixed;
-  inset: 80px 16px 16px;
-  z-index: 200;
-  aspect-ratio: unset;
-  border-radius: var(--radius-lg);
-  animation: expandIn 0.3s ease;
-}
-
-.video-panel.expanded .expand-btn {
-  opacity: 1;
-}
-
+.video-panel.expanded,
 .yt-player-wrapper.expanded {
   position: fixed;
   inset: 80px 16px 16px;
@@ -757,10 +745,66 @@ body {
   aspect-ratio: unset;
   border-radius: var(--radius-lg);
   animation: expandIn 0.3s ease;
+  background: #000;
 }
 
+.video-panel.expanded .expand-btn,
 .yt-player-wrapper.expanded .expand-btn {
   opacity: 1;
+}
+
+/* ── PIP — small floating thumbnails ─────────────── */
+.video-panel.pip {
+  position: fixed;
+  z-index: 210;
+  width: 160px;
+  height: 110px;
+  aspect-ratio: unset;
+  border-radius: 12px;
+  border: 2px solid rgba(155, 109, 255, 0.4);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  animation: pipIn 0.3s ease;
+  overflow: hidden;
+}
+
+.video-panel.pip .video-placeholder {
+  transform: scale(0.5);
+}
+
+.video-panel.pip .video-label {
+  font-size: 0.6rem;
+  padding: 2px 6px;
+}
+
+.video-panel.pip .video-controls {
+  display: none;
+}
+
+.video-panel.pip .expand-btn {
+  display: none;
+}
+
+/* Position: stack them bottom-right */
+#myVideoPanel.pip {
+  bottom: 24px;
+  right: 24px;
+}
+
+#partnerVideoPanel.pip {
+  bottom: 24px;
+  right: 200px;
+}
+
+@keyframes pipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes expandIn {

@@ -90,14 +90,46 @@ if (!roomId) { window.location.href = 'index.html'; }
 })();
 
 // ─── EXPAND / MINIMIZE PANELS ─────────────────────────
+const myVideoPanel = document.getElementById('myVideoPanel');
+const partnerVideoPanel = document.getElementById('partnerVideoPanel');
+const ytPlayerWrapper = document.getElementById('ytPlayerWrapper');
+
+function collapseAll() {
+    document.querySelectorAll('.expanded, .pip').forEach(el => el.classList.remove('expanded', 'pip'));
+    document.querySelectorAll('.expand-btn').forEach(b => { b.textContent = '⛶'; b.title = 'Maximize'; });
+    document.body.classList.remove('has-expanded');
+}
+
 document.querySelectorAll('.expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const targetId = btn.getAttribute('data-target');
         const panel = document.getElementById(targetId);
         if (!panel) return;
-        const isExpanded = panel.classList.toggle('expanded');
-        btn.textContent = isExpanded ? '✕' : '⛶';
-        btn.title = isExpanded ? 'Minimize' : 'Maximize';
+
+        if (panel.classList.contains('expanded')) {
+            // Minimize everything
+            collapseAll();
+            return;
+        }
+
+        // Collapse any previous expansion first
+        collapseAll();
+
+        // Expand this panel
+        panel.classList.add('expanded');
+        btn.textContent = '✕';
+        btn.title = 'Minimize';
+        document.body.classList.add('has-expanded');
+
+        // Make video panels into PIP if something else is expanded
+        if (targetId === 'ytPlayerWrapper') {
+            myVideoPanel.classList.add('pip');
+            partnerVideoPanel.classList.add('pip');
+        } else if (targetId === 'myVideoPanel') {
+            partnerVideoPanel.classList.add('pip');
+        } else if (targetId === 'partnerVideoPanel') {
+            myVideoPanel.classList.add('pip');
+        }
     });
 });
 
