@@ -815,28 +815,15 @@ function secToTime(s) {
 // ─────────────────────────────────────────────────────
 //  SYNC MESSAGE HANDLER
 // ─────────────────────────────────────────────────────
-async function handleSyncMessage(msg) {
+async function handleSyncMessage(msg, senderId) {
     if (!msg || !msg.type) return;
 
-    // ── PIN verification (first message exchanged) ─────
-    if (msg.type === 'pin_verify') {
-        if (msg.token !== roomPinToken()) {
-            toast('🔒 Wrong PIN — unauthorized person tried to join!', 'error', 7000);
-            dataConn.close();
-            setStatus('disconnected', 'Unauthorized connection blocked');
-        } else {
-            // PIN matched — finalize connection
-            setStatus('connected', 'Connected with partner 💫');
-            partnerPlaceholderName.textContent = 'Partner 💫';
-            document.querySelector('.video-grid').classList.remove('alone');
-            toast('Partner connected! 🌙', 'success');
-            ytSyncText.textContent = 'Partner connected 🌙';
-            sendSync({ type: 'peer_name', name: myName });
-            // Share our full playlist so partner sees everything we've saved
-            if (playlist.length > 0) {
-                sendSync({ type: 'playlist_sync', roomPlaylists });
-            }
+    if (msg.type === 'guest_joined') {
+        if (msg.id !== hostId && msg.id !== peer?.id) {
+            const conn = peer.connect(msg.id, { reliable: true });
+            setupGuestToGuest(conn, msg.name);
         }
+        return;
     }
 
     // ── Secure Chat Messaging ─────────────────────────────────
@@ -1296,13 +1283,10 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 //  BOOT
 // ─────────────────────────────────────────────────────
 (async () => {
-    const hash = await hashRoomId(roomId);
-    peerIdA = hash + 'a';
-    peerIdB = hash + 'b';
     await setupPeer();
     loadPlaylist();
 
-    const sendName = () => { if (dataConn && dataConn.open) sendSync({ type: 'peer_name', name: myName }); };
+    const sendName = () => { broadcast({ type: 'peer_name', name: myName }); };
     setTimeout(sendName, 1500);
 
 })();
