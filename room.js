@@ -361,13 +361,7 @@ async function setupPeer() {
 
 function setupHostListeners() {
     peer.on('connection', conn => {
-        // Handle auth from metadata immediately (fired before 'data' in some environments)
-        const meta = conn.metadata;
-        if (meta && meta.type === 'auth_request') {
-            handleAuthRequest(conn, meta.name, meta.token);
-            return;
-        }
-        // Fallback: wait for data channel message
+        // Always set up data listener FIRST so we don't miss post-auth messages
         conn.on('data', msg => {
             if (msg.type === 'auth_request') {
                 handleAuthRequest(conn, msg.name, msg.token);
@@ -376,6 +370,12 @@ function setupHostListeners() {
             }
         });
         conn.on('close', () => handlePeerDisconnect(conn.peer));
+
+        // Also handle auth from metadata (fires immediately on connect in some PeerJS versions)
+        const meta = conn.metadata;
+        if (meta && meta.type === 'auth_request') {
+            handleAuthRequest(conn, meta.name, meta.token);
+        }
     });
 
     peer.on('call', call => handleIncomingCall(call));
@@ -635,16 +635,33 @@ function renderChatRecipientDropdown() {
     if (!sel) {
         sel = document.createElement('select');
         sel.id = 'chatRecipient';
-        sel.className = 'chat-recipient-dropdown';
+        // Inline styles so it matches the dark glass theme regardless of caching
+        sel.setAttribute('style', [
+            'appearance: none',
+            'background: rgba(255,255,255,0.07)',
+            'border: 1px solid rgba(255,255,255,0.15)',
+            'border-radius: 20px',
+            'color: rgba(255,255,255,0.85)',
+            'font-family: Inter, sans-serif',
+            'font-size: 0.78rem',
+            'padding: 4px 28px 4px 12px',
+            'cursor: pointer',
+            'outline: none',
+            'margin-right: 6px',
+            'max-width: 120px',
+            'background-image: url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'rgba(255,255,255,0.5)\'/%3E%3C/svg%3E")',
+            'background-repeat: no-repeat',
+            'background-position: right 10px center',
+        ].join(';'));
 
         const header = document.querySelector('.chat-header');
         if (header) header.insertBefore(sel, header.querySelector('.chat-close-btn'));
     }
 
     const currVal = sel.value;
-    let optionsHtml = `<option value="all">Everyone</option>`;
+    let optionsHtml = `<option value="all">🌍 Everyone</option>`;
     Object.keys(peersMap).forEach(id => {
-        optionsHtml += `<option value="${id}">${peersMap[id].name}</option>`;
+        optionsHtml += `<option value="${id}">🔒 ${peersMap[id].name}</option>`;
     });
     sel.innerHTML = optionsHtml;
 
@@ -837,7 +854,7 @@ async function handleSyncMessage(msg, senderId) {
         const chatMsg = msg.message;
         chatMsg.senderLabel = msg.sentBy || "Unknown";
 
-        if (chatMsg.to && chatMsg.to !== 'all' && chatMsg.to !== myName) {
+        if (chatMsg.to && chatMsg.to !== 'all' && chatMsg.to !== peer?.id) {
             return;
         }
         // Check for duplicates
