@@ -786,13 +786,13 @@ body {
 
 /* Position: stack them bottom-right */
 #myVideoPanel.pip {
-  bottom: 24px;
+  bottom: 144px;
   right: 24px;
 }
 
 #partnerVideoPanel.pip {
   bottom: 24px;
-  right: 200px;
+  right: 24px;
 }
 
 @keyframes pipIn {
