@@ -330,7 +330,7 @@ function sendSync(msg) { broadcast(msg); }
 
 async function setupPeer() {
     setStatus('connecting', 'Connecting…');
-    hostId = await hashRoomId(roomId) + '_host';
+    hostId = (await hashRoomId(roomId)) + 'h'; // PeerJS IDs: alphanumeric only, no underscores
 
     return new Promise((resolve) => {
         peer = new Peer(hostId, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
@@ -361,29 +361,16 @@ async function setupPeer() {
 
 function setupHostListeners() {
     peer.on('connection', conn => {
+        // Handle auth from metadata immediately (fired before 'data' in some environments)
+        const meta = conn.metadata;
+        if (meta && meta.type === 'auth_request') {
+            handleAuthRequest(conn, meta.name, meta.token);
+            return;
+        }
+        // Fallback: wait for data channel message
         conn.on('data', msg => {
             if (msg.type === 'auth_request') {
-                const token = msg.token;
-                const guestName = msg.name;
-
-                if (approvedTokens.includes(token)) {
-                    acceptGuest(conn, guestName, token);
-                } else {
-                    document.getElementById('authMessage').textContent = `${guestName} wants to join.`;
-                    document.getElementById('authModal').style.display = 'flex';
-
-                    document.getElementById('authAcceptBtn').onclick = () => {
-                        document.getElementById('authModal').style.display = 'none';
-                        approvedTokens.push(token);
-                        localStorage.setItem(`approved_${roomId}`, JSON.stringify(approvedTokens));
-                        acceptGuest(conn, guestName, token);
-                    };
-                    document.getElementById('authRejectBtn').onclick = () => {
-                        document.getElementById('authModal').style.display = 'none';
-                        conn.send({ type: 'auth_rejected' });
-                        setTimeout(() => conn.close(), 500);
-                    };
-                }
+                handleAuthRequest(conn, msg.name, msg.token);
             } else if (peersMap[conn.peer]) {
                 handleSyncMessage(msg, conn.peer);
             }
@@ -392,6 +379,27 @@ function setupHostListeners() {
     });
 
     peer.on('call', call => handleIncomingCall(call));
+}
+
+function handleAuthRequest(conn, guestName, token) {
+    if (approvedTokens.includes(token)) {
+        acceptGuest(conn, guestName, token);
+    } else {
+        document.getElementById('authMessage').textContent = `${guestName} wants to join.`;
+        document.getElementById('authModal').style.display = 'flex';
+
+        document.getElementById('authAcceptBtn').onclick = () => {
+            document.getElementById('authModal').style.display = 'none';
+            approvedTokens.push(token);
+            localStorage.setItem(`approved_${roomId}`, JSON.stringify(approvedTokens));
+            acceptGuest(conn, guestName, token);
+        };
+        document.getElementById('authRejectBtn').onclick = () => {
+            document.getElementById('authModal').style.display = 'none';
+            conn.send({ type: 'auth_rejected' });
+            setTimeout(() => conn.close(), 500);
+        };
+    }
 }
 
 function acceptGuest(conn, guestName, token) {
@@ -418,62 +426,70 @@ function acceptGuest(conn, guestName, token) {
 }
 
 function connectToHost() {
-    const hostConn = peer.connect(hostId, { reliable: true });
+    // Small delay ensures the host PeerJS registration is complete before connect attempt
+    setTimeout(() => {
+        const hostConn = peer.connect(hostId, { reliable: true, metadata: { type: 'auth_request', token: roomPinToken(), name: myName } });
 
-    hostConn.on('open', () => {
-        hostConn.send({ type: 'auth_request', token: roomPinToken(), name: myName });
-    });
+        hostConn.on('open', () => {
+            // Also send via data channel as backup (some PeerJS versions don't surface metadata)
+            hostConn.send({ type: 'auth_request', token: roomPinToken(), name: myName });
+        });
 
-    hostConn.on('data', msg => {
-        if (msg.type === 'auth_rejected') {
-            setStatus('disconnected', 'Host rejected your join request.');
-            toast('Join request rejected!', 'error');
-            hostConn.close();
-        } else if (msg.type === 'auth_accepted') {
-            setStatus('connected', 'Connected to Room.');
-            toast('Joined Room successfully! 🌙', 'success');
+        hostConn.on('error', err => {
+            toast('Could not reach Host. Make sure the room code and PIN match.', 'error');
+            setStatus('disconnected', 'Could not reach host.');
+        });
 
-            peersMap[hostId] = { dataConn: hostConn, name: "Host", callConn: null, stream: null };
+        hostConn.on('data', msg => {
+            if (msg.type === 'auth_rejected') {
+                setStatus('disconnected', 'Host rejected your join request.');
+                toast('Join request rejected!', 'error');
+                hostConn.close();
+            } else if (msg.type === 'auth_accepted') {
+                setStatus('connected', 'Connected to Room.');
+                toast('Joined Room successfully! 🌙', 'success');
 
-            if (msg.hostPlaylists) {
-                roomPlaylists = msg.hostPlaylists;
-                savePlaylist(); renderPlaylist();
-            }
-            if (msg.ytState && msg.ytState.videoId) {
-                loadYouTubeVideo(msg.ytState.videoId, msg.ytState.time, msg.ytState.playing);
-            }
+                peersMap[hostId] = { dataConn: hostConn, name: 'Host', callConn: null, stream: null };
 
-            msg.peers.forEach(p => {
-                const conn = peer.connect(p.id, { reliable: true });
-                setupGuestToGuest(conn, p.name);
-            });
+                if (msg.hostPlaylists) {
+                    roomPlaylists = msg.hostPlaylists;
+                    savePlaylist(); renderPlaylist();
+                }
+                if (msg.ytState && msg.ytState.videoId) {
+                    loadYouTubeVideo(msg.ytState.videoId, msg.ytState.time, msg.ytState.playing);
+                }
 
-            renderChatRecipientDropdown();
-        }
-        else if (peersMap[hostId]) {
-            handleSyncMessage(msg, hostId);
-        }
-    });
+                msg.peers.forEach(p => {
+                    const conn = peer.connect(p.id, { reliable: true });
+                    setupGuestToGuest(conn, p.name);
+                });
 
-    hostConn.on('close', () => {
-        setStatus('disconnected', 'Host disconnected.');
-        endCall();
-        toast('Host left the room.', 'error');
-    });
-
-    peer.on('connection', conn => {
-        conn.on('data', msg => {
-            if (msg.type === 'peer_intro') {
-                setupGuestToGuest(conn, msg.name);
-                toast(`${msg.name} joined!`, 'info');
-            } else if (peersMap[conn.peer]) {
-                handleSyncMessage(msg, conn.peer);
+                renderChatRecipientDropdown();
+            } else if (peersMap[hostId]) {
+                handleSyncMessage(msg, hostId);
             }
         });
-        conn.on('close', () => handlePeerDisconnect(conn.peer));
-    });
 
-    peer.on('call', call => handleIncomingCall(call));
+        hostConn.on('close', () => {
+            setStatus('disconnected', 'Host disconnected.');
+            endCall();
+            toast('Host left the room.', 'error');
+        });
+
+        peer.on('connection', conn => {
+            conn.on('data', msg => {
+                if (msg.type === 'peer_intro') {
+                    setupGuestToGuest(conn, msg.name);
+                    toast(`${msg.name} joined!`, 'info');
+                } else if (peersMap[conn.peer]) {
+                    handleSyncMessage(msg, conn.peer);
+                }
+            });
+            conn.on('close', () => handlePeerDisconnect(conn.peer));
+        });
+
+        peer.on('call', call => handleIncomingCall(call));
+    }, 1000); // 1s delay so host peer is registered
 }
 
 function setupGuestToGuest(conn, peerName) {
