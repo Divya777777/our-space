@@ -2272,3 +2272,133 @@ body {
   object-fit: contain !important;
   background: black;
 }
+
+/* ───────────────────────────────────────────────────────── */
+/*  CHAT REPLIES & IMAGE MODAL                               */
+/* ───────────────────────────────────────────────────────── */
+
+/* Image Modal */
+.image-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.image-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.image-modal img {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.image-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.image-modal-download {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background: var(--accent-purple);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+/* Chat Reply Preview Layer */
+.chat-reply-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--accent-purple);
+  margin-bottom: 8px;
+  border-radius: 4px;
+}
+
+.reply-preview-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.reply-preview-text strong {
+  color: var(--accent-moon);
+  display: block;
+}
+
+.chat-reply-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+/* Rendered Quote inside Bubble */
+.chat-quoted {
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 3px solid var(--accent-purple);
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  opacity: 0.9;
+}
+
+.chat-quoted strong {
+  display: block;
+  color: var(--accent-moon);
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+}
+
+.chat-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.chat-action-btn:hover {
+  color: var(--accent-moon);
+}
+
+.chat-img-preview {
+  cursor: pointer;
+}

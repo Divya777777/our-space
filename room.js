@@ -1165,6 +1165,43 @@ let chatDB;
 let chatDB_ready = false;
 let unreadChatCount = 0;
 
+let currentReplyTo = null;
+
+window.clearReplyTo = function () {
+    currentReplyTo = null;
+    document.getElementById('chatReplyPreview').style.display = 'none';
+    const input = document.getElementById('chatInput');
+    if (input) input.focus();
+};
+
+window.setReplyTo = function (id, text, senderLabel) {
+    currentReplyTo = { id, text, senderLabel };
+    const preview = document.getElementById('chatReplyPreview');
+    preview.style.display = 'flex';
+    preview.innerHTML = `
+        <div class="reply-preview-text">
+            <strong>${senderLabel}</strong>
+            ${text.substring(0, 60)}${text.length > 60 ? '...' : ''}
+        </div>
+        <button class="chat-reply-close" onclick="clearReplyTo()">✕</button>
+    `;
+    document.getElementById('chatInput').focus();
+};
+
+window.scrollToMsg = function (id) {
+    const el = document.querySelector(`[data-chat-id="${id}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    else toast('Message is not loaded or too old.', 'info');
+};
+
+window.openImageModal = function (src, fileName) {
+    document.getElementById('imageModalImg').src = src;
+    const dl = document.getElementById('imageModalDownload');
+    dl.href = src;
+    dl.download = fileName;
+    document.getElementById('imageModal').classList.add('show');
+};
+
 function initChatDB() {
     const request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
     request.onupgradeneeded = e => {
@@ -1207,22 +1244,46 @@ function appendChatMessage(msg, saveToDb = true) {
     div.className = `chat-msg ${isMe ? 'me' : 'partner'}`;
     div.dataset.chatId = msg.id;
 
+    let replyHtml = '';
+    if (msg.replyTo) {
+        replyHtml = `
+            <div class="chat-quoted" onclick="scrollToMsg('${msg.replyTo.id}')">
+                <strong>${msg.replyTo.senderLabel}</strong>
+                <div>${msg.replyTo.text.substring(0, 60)}${msg.replyTo.text.length > 60 ? '...' : ''}</div>
+            </div>
+        `;
+    }
+
     let contentHtml = '';
+    let rawTextForReply = '';
     if (msg.type === 'image') {
-        contentHtml = `<img src="${msg.content}" class="chat-img-preview" alt="Image" />`;
+        contentHtml = `
+            <div class="chat-img-wrapper">
+                <img src="${msg.content}" class="chat-img-preview" alt="Image" onclick="openImageModal('${msg.content}', '${msg.fileName || 'image.jpg'}')" />
+            </div>
+        `;
+        rawTextForReply = '📷 Image';
     } else if (msg.type === 'file') {
-        contentHtml = `<a href="${msg.content}" download="${msg.fileName}" class="chat-file-preview" target="_blank">📄 ${msg.fileName}</a>`;
+        contentHtml = `<a href="${msg.content}" download="${msg.fileName}" class="chat-file-preview" target="_blank">📄 ${msg.fileName} <span style="margin-left:auto">⬇️</span></a>`;
+        rawTextForReply = `📄 ${msg.fileName}`;
     } else {
         const safeText = msg.content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         contentHtml = `<span>${safeText}</span>`;
+        rawTextForReply = safeText;
     }
 
+    const safeReplyStr = rawTextForReply.replace(/'/g, "\\'").replace(/"/g, "&quot;");
     const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     div.innerHTML = `
-        <div class="chat-bubble">${contentHtml}</div>
+        <div class="chat-bubble">
+            ${replyHtml}
+            ${contentHtml}
+        </div>
         <div class="chat-meta">
             <span>${isMe ? 'You' : msg.senderLabel}</span>
             <span>${timeStr}</span>
+            <button class="chat-action-btn" title="Reply" onclick="setReplyTo('${msg.id}', '${safeReplyStr}', '${isMe ? 'You' : msg.senderLabel}')">↩️</button>
         </div>
     `;
     container.appendChild(div);
@@ -1248,8 +1309,10 @@ function sendChatMessage(text, type = 'text', fileData = null, fileName = null) 
         type: type,
         content: type === 'text' ? text : fileData,
         fileName: fileName,
+        replyTo: currentReplyTo,
         timestamp: Date.now()
     };
+    clearReplyTo();
     appendChatMessage(msg, true);
     sendSync({ type: 'chat_msg', message: msg, sentBy: myName });
 }

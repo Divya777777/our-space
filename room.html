@@ -240,9 +240,8 @@
                 <span class="chat-title">Room Chat <small>🔒 Secure Local</small></span>
                 <button class="chat-close-btn" id="chatCloseBtn">✕</button>
             </div>
-            <div class="chat-messages" id="chatMessages">
-                <!-- Messages populate here -->
-            </div>
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-reply-preview" id="chatReplyPreview" style="display: none;"></div>
             <div class="chat-input-area">
                 <label for="chatFileInput" class="chat-attach-btn" title="Send File/Image">📎</label>
                 <input type="file" id="chatFileInput" style="display: none;" />
@@ -253,6 +252,14 @@
         </div>
 
     </main>
+
+    <!-- Image Modal -->
+    <div class="image-modal" id="imageModal">
+        <button class="image-modal-close"
+            onclick="document.getElementById('imageModal').classList.remove('show')">✕</button>
+        <img id="imageModalImg" src="" />
+        <a id="imageModalDownload" href="" download class="image-modal-download">Download</a>
+    </div>
 
     <!-- Toast -->
     <div class="toast-container" id="toastContainer"></div>
