@@ -88,12 +88,21 @@ document.getElementById('generateBtn').addEventListener('click', () => {
   document.getElementById('roomInput').value = `${adj}${noun}${Math.floor(Math.random() * 90) + 10}`;
 });
 
-document.getElementById('enterBtn').addEventListener('click', enterRoom);
+document.getElementById('createBtn').addEventListener('click', () => {
+  if (!document.getElementById('roomInput').value.trim()) {
+    document.getElementById('generateBtn').click();
+  }
+  enterRoom(true);
+});
+
+document.getElementById('joinBtn').addEventListener('click', () => {
+  enterRoom(false);
+});
 ['nameInput', 'roomInput', 'pinInput'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') enterRoom(); });
 });
 
-function enterRoom() {
+function enterRoom(isCreating = false) {
   const name = document.getElementById('nameInput').value.trim();
   const room = document.getElementById('roomInput').value.trim().toLowerCase().replace(/\s+/g, '-');
   const pin = document.getElementById('pinInput').value.trim();
@@ -103,7 +112,8 @@ function enterRoom() {
   sessionStorage.setItem('ourspace_name', name);
   sessionStorage.setItem('ourspace_room', room);
   sessionStorage.setItem('ourspace_pin', pin);
-  const btn = document.getElementById('enterBtn');
+
+  const btn = isCreating ? document.getElementById('createBtn') : document.getElementById('joinBtn');
   btn.innerHTML = '<span>Entering…</span>'; btn.disabled = true;
   setTimeout(() => { window.location.href = 'room.html'; }, 400);
 }

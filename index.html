@@ -69,12 +69,15 @@
         <p class="pin-hint">Only people with the exact same PIN can join your room</p>
       </div>
 
-      <button class="enter-btn" id="enterBtn">
-        <span>Enter Our Space</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 12h14M12 5l7 7-7 7" />
-        </svg>
-      </button>
+      <div style="display: flex; gap: 15px; margin-top: 10px;">
+        <button class="enter-btn secondary-btn" id="joinBtn"
+          style="flex:1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">
+          <span>🚪 Join Room</span>
+        </button>
+        <button class="enter-btn" id="createBtn" style="flex:1;">
+          <span>✨ Create Room</span>
+        </button>
+      </div>
 
       <div class="divider"><span>music via</span></div>
       <p class="hint-text">🎵 YouTube — paste any song link, no account needed</p>
