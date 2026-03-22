@@ -313,9 +313,15 @@ function roomPinToken() {
 // ─────────────────────────────────────────────────────
 //  WEBRTC / PEERJS
 // ─────────────────────────────────────────────────────
-let peer = null, dataConn = null, localStream = null;
+let peer = null, localStream = null;
 let isMuted = false, isVideoOff = false, isInCall = false;
-let peerIdA, peerIdB;
+
+let hostId = '';
+let isHost = false;
+let approvedTokens = JSON.parse(localStorage.getItem(`approved_${roomId || ''}`)) || [];
+const peersMap = {};
+
+function roomPinToken() { return btoa(roomPin).substring(0, 15); }
 
 async function hashRoomId(str) {
     const data = new TextEncoder().encode(str);
@@ -323,67 +329,181 @@ async function hashRoomId(str) {
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 20);
 }
 
-function initPeer(id) {
-    return new Promise((resolve, reject) => {
-        const p = new Peer(id, {
-            debug: 0,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                ]
-            }
-        });
-        p.on('open', () => resolve(p));
-        p.on('error', e => reject(e));
+function broadcast(msg, excludeId = null) {
+    Object.values(peersMap).forEach(p => {
+        if (p.dataConn && p.dataConn.open && p.dataConn.peer !== excludeId) {
+            p.dataConn.send(msg);
+        }
     });
 }
+function sendSync(msg) { broadcast(msg); }
 
 async function setupPeer() {
     setStatus('connecting', 'Connecting…');
-    try {
-        peer = await initPeer(peerIdA);
-        toast(`Room ready! Share code: ${roomId}`, 'info', 5000);
-        setStatus('connecting', 'Waiting for partner…');
-        peer.on('connection', conn => { dataConn = conn; setupDataConn(); });
-        peer.on('call', answerCall);
-    } catch (err) {
-        if (err.type === 'unavailable-id') {
-            try {
-                peer = await initPeer(peerIdB);
-                setStatus('connecting', 'Connecting to partner…');
-                dataConn = peer.connect(peerIdA, { reliable: true });
-                setupDataConn();
-                peer.on('call', answerCall);
-                toast('Partner found! Connecting…', 'info');
-            } catch (err2) {
-                toast('Could not connect. Please refresh.', 'error');
+    hostId = await hashRoomId(roomId) + '_host';
+
+    return new Promise((resolve) => {
+        peer = new Peer(hostId, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+
+        peer.on('open', id => {
+            isHost = true;
+            toast(`Room ready! You are the Host.`, 'info', 5000);
+            setStatus('connected', 'Waiting for guests…');
+            setupHostListeners();
+            resolve();
+        });
+
+        peer.on('error', err => {
+            if (err.type === 'unavailable-id') {
+                isHost = false;
+                peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+                peer.on('open', id => {
+                    setStatus('connecting', 'Connecting to Host…');
+                    connectToHost();
+                    resolve();
+                });
+            } else {
+                toast('Network error connecting to server.', 'error');
             }
-        } else {
-            toast('Connection error. Please refresh.', 'error');
-        }
+        });
+    });
+}
+
+function setupHostListeners() {
+    peer.on('connection', conn => {
+        conn.on('data', msg => {
+            if (msg.type === 'auth_request') {
+                const token = msg.token;
+                const guestName = msg.name;
+
+                if (approvedTokens.includes(token)) {
+                    acceptGuest(conn, guestName, token);
+                } else {
+                    document.getElementById('authMessage').textContent = `${guestName} wants to join.`;
+                    document.getElementById('authModal').style.display = 'flex';
+
+                    document.getElementById('authAcceptBtn').onclick = () => {
+                        document.getElementById('authModal').style.display = 'none';
+                        approvedTokens.push(token);
+                        localStorage.setItem(`approved_${roomId}`, JSON.stringify(approvedTokens));
+                        acceptGuest(conn, guestName, token);
+                    };
+                    document.getElementById('authRejectBtn').onclick = () => {
+                        document.getElementById('authModal').style.display = 'none';
+                        conn.send({ type: 'auth_rejected' });
+                        setTimeout(() => conn.close(), 500);
+                    };
+                }
+            } else if (peersMap[conn.peer]) {
+                handleSyncMessage(msg, conn.peer);
+            }
+        });
+        conn.on('close', () => handlePeerDisconnect(conn.peer));
+    });
+
+    peer.on('call', call => handleIncomingCall(call));
+}
+
+function acceptGuest(conn, guestName, token) {
+    const newPeerId = conn.peer;
+
+    const activePeers = Object.keys(peersMap).map(id => ({ id, name: peersMap[id].name }));
+    conn.send({
+        type: 'auth_accepted',
+        peers: activePeers,
+        hostPlaylists: roomPlaylists,
+        ytState: { videoId: ytVideoId, time: ytPlayer?.getCurrentTime?.() || 0, playing: ytPlaying }
+    });
+
+    peersMap[newPeerId] = { dataConn: conn, name: guestName, callConn: null, stream: null };
+    broadcast({ type: 'guest_joined', id: newPeerId, name: guestName }, newPeerId);
+
+    toast(`${guestName} joined! 🌙`, 'success');
+    renderChatRecipientDropdown();
+
+    if (isInCall && localStream) {
+        const call = peer.call(newPeerId, localStream);
+        if (call) handleOutboundCall(call, newPeerId);
     }
 }
 
-function setupDataConn() {
-    dataConn.on('open', () => {
-        // Immediately send our PIN token for verification
-        sendSync({ type: 'pin_verify', token: roomPinToken() });
+function connectToHost() {
+    const hostConn = peer.connect(hostId, { reliable: true });
+
+    hostConn.on('open', () => {
+        hostConn.send({ type: 'auth_request', token: roomPinToken(), name: myName });
     });
-    dataConn.on('data', msg => handleSyncMessage(msg));
-    dataConn.on('close', () => {
-        setStatus('disconnected', 'Partner disconnected');
-        partnerPlaceholderName.textContent = 'Waiting...';
-        document.querySelector('.video-grid').classList.add('alone');
+
+    hostConn.on('data', msg => {
+        if (msg.type === 'auth_rejected') {
+            setStatus('disconnected', 'Host rejected your join request.');
+            toast('Join request rejected!', 'error');
+            hostConn.close();
+        } else if (msg.type === 'auth_accepted') {
+            setStatus('connected', 'Connected to Room.');
+            toast('Joined Room successfully! 🌙', 'success');
+
+            peersMap[hostId] = { dataConn: hostConn, name: "Host", callConn: null, stream: null };
+
+            if (msg.hostPlaylists) {
+                roomPlaylists = msg.hostPlaylists;
+                savePlaylist(); renderPlaylist();
+            }
+            if (msg.ytState && msg.ytState.videoId) {
+                loadYouTubeVideo(msg.ytState.videoId, msg.ytState.time, msg.ytState.playing);
+            }
+
+            msg.peers.forEach(p => {
+                const conn = peer.connect(p.id, { reliable: true });
+                setupGuestToGuest(conn, p.name);
+            });
+
+            renderChatRecipientDropdown();
+        }
+        else if (peersMap[hostId]) {
+            handleSyncMessage(msg, hostId);
+        }
+    });
+
+    hostConn.on('close', () => {
+        setStatus('disconnected', 'Host disconnected.');
         endCall();
-        toast('Partner disconnected 💔', 'error');
-        ytSyncText.textContent = 'Partner disconnected';
+        toast('Host left the room.', 'error');
     });
-    dataConn.on('error', err => console.error('DataConn:', err));
+
+    peer.on('connection', conn => {
+        conn.on('data', msg => {
+            if (msg.type === 'peer_intro') {
+                setupGuestToGuest(conn, msg.name);
+                toast(`${msg.name} joined!`, 'info');
+            } else if (peersMap[conn.peer]) {
+                handleSyncMessage(msg, conn.peer);
+            }
+        });
+        conn.on('close', () => handlePeerDisconnect(conn.peer));
+    });
+
+    peer.on('call', call => handleIncomingCall(call));
 }
 
-function sendSync(msg) {
-    if (dataConn && dataConn.open) dataConn.send(msg);
+function setupGuestToGuest(conn, peerName) {
+    conn.on('open', () => { conn.send({ type: 'peer_intro', name: myName }); });
+    peersMap[conn.peer] = { dataConn: conn, name: peerName, callConn: null, stream: null };
+
+    conn.on('data', msg => {
+        if (msg.type !== 'peer_intro') handleSyncMessage(msg, conn.peer);
+    });
+    conn.on('close', () => handlePeerDisconnect(conn.peer));
+    renderChatRecipientDropdown();
+}
+
+function handlePeerDisconnect(id) {
+    if (peersMap[id]) {
+        toast(`${peersMap[id].name} left.`, 'info');
+        removeVideoPanel(id);
+        delete peersMap[id];
+        renderChatRecipientDropdown();
+    }
 }
 
 // ─── CALL ─────────────────────────────────────────────
@@ -396,71 +516,135 @@ async function startCall() {
         localStream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: {
-                noiseSuppression: true,
-                echoCancellation: true,
-                autoGainControl: true,
-                googEchoCancellation: true,
-                googAutoGainControl: true,
-                googNoiseSuppression: true,
-                googHighpassFilter: true
+                noiseSuppression: true, echoCancellation: true, autoGainControl: true,
+                googEchoCancellation: true, googAutoGainControl: true, googNoiseSuppression: true, googHighpassFilter: true
             }
         });
         myVideo.srcObject = localStream;
         myVideo.classList.add('active');
         myPlaceholder.style.display = 'none';
+
         startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
         startCallBtn.classList.add('end-call');
         isInCall = true;
-        sendSync({ type: 'call_request' });
-        if (peer.id === peerIdA) attemptCall();
-    } catch (err) {
-        toast('Could not access camera/mic. Check permissions.', 'error');
-    }
+
+        broadcast({ type: 'call_request' });
+
+        Object.keys(peersMap).forEach(id => {
+            const call = peer.call(id, localStream);
+            if (call) handleOutboundCall(call, id);
+        });
+
+    } catch (err) { toast('Could not access camera/mic.', 'error'); }
 }
 
-function attemptCall() {
-    if (!localStream) return;
-    const call = peer.call(peerIdB, localStream);
-    if (call) handleCallStream(call);
+function handleOutboundCall(call, id) {
+    peersMap[id].callConn = call;
+    call.on('stream', stream => { addVideoPanel(id, stream); });
+    call.on('close', () => { removeVideoPanel(id); });
+    call.on('error', () => { removeVideoPanel(id); });
 }
 
-function answerCall(call) {
+function handleIncomingCall(call) {
+    const id = call.peer;
+    if (!peersMap[id]) return;
+
     if (localStream) {
         call.answer(localStream);
-        handleCallStream(call);
+        peersMap[id].callConn = call;
+        call.on('stream', stream => addVideoPanel(id, stream));
+        call.on('close', () => removeVideoPanel(id));
     } else {
         navigator.mediaDevices.getUserMedia({
             video: true,
-            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true, googEchoCancellation: true, googAutoGainControl: true, googNoiseSuppression: true, googHighpassFilter: true }
         }).then(stream => {
             localStream = stream;
             myVideo.srcObject = stream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
             isInCall = true;
             startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
             startCallBtn.classList.add('end-call');
-            call.answer(stream); handleCallStream(call);
+
+            call.answer(stream);
+            peersMap[id].callConn = call;
+            call.on('stream', s => addVideoPanel(id, s));
+            call.on('close', () => removeVideoPanel(id));
         }).catch(() => toast('Could not access camera/mic.', 'error'));
     }
 }
 
-function handleCallStream(call) {
-    call.on('stream', stream => {
-        partnerVideo.srcObject = stream; partnerVideo.classList.add('active'); partnerPlaceholder.style.display = 'none';
-    });
-    call.on('close', () => {
-        partnerVideo.srcObject = null; partnerVideo.classList.remove('active'); partnerPlaceholder.style.display = 'flex';
-        toast('Call ended', 'info');
-    });
+function addVideoPanel(id, stream) {
+    let panel = document.getElementById(`panel_${id}`);
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.className = 'video-panel';
+        panel.id = `panel_${id}`;
+        panel.innerHTML = `
+            <video id="video_${id}" autoplay playsinline class="video-element active"></video>
+            <div class="video-label">${peersMap[id].name}</div>
+            <button class="expand-btn" data-target="panel_${id}" title="Expand">⛶</button>
+        `;
+        document.getElementById('videoGrid').appendChild(panel);
+
+        panel.querySelector('.expand-btn').addEventListener('click', (e) => {
+            panel.classList.toggle('expanded');
+            document.body.classList.toggle('has-expanded', panel.classList.contains('expanded'));
+            e.target.innerHTML = panel.classList.contains('expanded') ? '✕' : '⛶';
+        });
+    }
+    const vid = document.getElementById(`video_${id}`);
+    if (vid) vid.srcObject = stream;
+    document.querySelector('.video-grid').classList.remove('alone');
+}
+
+function removeVideoPanel(id) {
+    const panel = document.getElementById(`panel_${id}`);
+    if (panel) panel.remove();
+
+    if (document.querySelectorAll('.video-panel').length <= 1) {
+        document.querySelector('.video-grid').classList.add('alone');
+    }
 }
 
 function endCall() {
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     myVideo.srcObject = null; myVideo.classList.remove('active'); myPlaceholder.style.display = 'flex';
-    partnerVideo.srcObject = null; partnerVideo.classList.remove('active'); partnerPlaceholder.style.display = 'flex';
+
+    Object.keys(peersMap).forEach(id => {
+        if (peersMap[id].callConn) {
+            peersMap[id].callConn.close();
+            peersMap[id].callConn = null;
+        }
+        removeVideoPanel(id);
+    });
+
     isInCall = false;
     startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> Start Call`;
     startCallBtn.classList.remove('end-call');
     toast('Call ended', 'info');
+}
+
+function renderChatRecipientDropdown() {
+    let sel = document.getElementById('chatRecipient');
+    if (!sel) {
+        sel = document.createElement('select');
+        sel.id = 'chatRecipient';
+        sel.className = 'chat-recipient-dropdown';
+
+        const header = document.querySelector('.chat-header');
+        if (header) header.insertBefore(sel, header.querySelector('.chat-close-btn'));
+    }
+
+    const currVal = sel.value;
+    let optionsHtml = `<option value="all">Everyone</option>`;
+    Object.keys(peersMap).forEach(id => {
+        optionsHtml += `<option value="${id}">${peersMap[id].name}</option>`;
+    });
+    sel.innerHTML = optionsHtml;
+
+    if (currVal && Array.from(sel.options).find(o => o.value === currVal)) {
+        sel.value = currVal;
+    }
 }
 
 muteBtn.addEventListener('click', () => {
@@ -652,50 +836,17 @@ async function handleSyncMessage(msg) {
             if (playlist.length > 0) {
                 sendSync({ type: 'playlist_sync', roomPlaylists });
             }
-            // Sync our local Chat History to partner (in case they joined from a new device)
-            if (chatDB_ready) {
-                const tx = chatDB.transaction('messages', 'readonly');
-                const req = tx.objectStore('messages').getAll();
-                req.onsuccess = () => {
-                    if (req.result && req.result.length > 0) {
-                        sendSync({ type: 'chat_history_sync', messages: req.result });
-                    }
-                };
-            }
         }
-    }
-
-    // ── Secure Chat History Sync ──────────────────────────────
-    if (msg.type === 'chat_history_sync') {
-        if (!chatDB_ready || !msg.messages || msg.messages.length === 0) return;
-
-        const tx = chatDB.transaction('messages', 'readwrite');
-        const store = tx.objectStore('messages');
-        let addedNew = false;
-
-        msg.messages.forEach(chatMsg => {
-            const req = store.get(chatMsg.id);
-            req.onsuccess = () => {
-                if (!req.result) {
-                    store.put(chatMsg);
-                    addedNew = true;
-                }
-            };
-        });
-
-        tx.oncomplete = () => {
-            if (addedNew) {
-                loadChatHistory();
-                toast('Chat history securely synced from partner device! 🔄', 'success');
-            }
-        };
-        return;
     }
 
     // ── Secure Chat Messaging ─────────────────────────────────
     if (msg.type === 'chat_msg') {
         const chatMsg = msg.message;
-        chatMsg.senderLabel = msg.sentBy || "Partner";
+        chatMsg.senderLabel = msg.sentBy || "Unknown";
+
+        if (chatMsg.to && chatMsg.to !== 'all' && chatMsg.to !== myName) {
+            return;
+        }
         // Check for duplicates
         if (!chatDB_ready || !document.querySelector(`[data-chat-id="${chatMsg.id}"]`)) {
             appendChatMessage(chatMsg, true);
@@ -1274,6 +1425,7 @@ function appendChatMessage(msg, saveToDb = true) {
 
     const safeReplyStr = rawTextForReply.replace(/'/g, "\\'").replace(/"/g, "&quot;");
     const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const privFlag = msg.to && msg.to !== 'all' ? `<small style="color:var(--accent-purple);margin-left:5px;">[Private]</small>` : '';
 
     div.innerHTML = `
         <div class="chat-bubble">
@@ -1281,7 +1433,7 @@ function appendChatMessage(msg, saveToDb = true) {
             ${contentHtml}
         </div>
         <div class="chat-meta">
-            <span>${isMe ? 'You' : msg.senderLabel}</span>
+            <span>${isMe ? 'You' : msg.senderLabel}${privFlag}</span>
             <span>${timeStr}</span>
             <button class="chat-action-btn" title="Reply" onclick="setReplyTo('${msg.id}', '${safeReplyStr}', '${isMe ? 'You' : msg.senderLabel}')">↩️</button>
         </div>
@@ -1301,6 +1453,9 @@ function appendChatMessage(msg, saveToDb = true) {
 }
 
 function sendChatMessage(text, type = 'text', fileData = null, fileName = null) {
+    const toId = document.getElementById('chatRecipient')?.value || 'all';
+    const toName = toId === 'all' ? 'Everyone' : (peersMap[toId] ? peersMap[toId].name : 'Unknown');
+
     const msg = {
         id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
         sender: myName,
@@ -1310,11 +1465,18 @@ function sendChatMessage(text, type = 'text', fileData = null, fileName = null) 
         content: type === 'text' ? text : fileData,
         fileName: fileName,
         replyTo: currentReplyTo,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        to: toId,
+        toName: toName
     };
     clearReplyTo();
     appendChatMessage(msg, true);
-    sendSync({ type: 'chat_msg', message: msg, sentBy: myName });
+
+    if (toId === 'all') {
+        broadcast({ type: 'chat_msg', message: msg, sentBy: myName });
+    } else if (peersMap[toId] && peersMap[toId].dataConn) {
+        peersMap[toId].dataConn.send({ type: 'chat_msg', message: msg, sentBy: myName });
+    }
 }
 
 // GUI Listeners
