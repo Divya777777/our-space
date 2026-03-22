@@ -91,7 +91,6 @@ if (!roomId) { window.location.href = 'index.html'; }
 
 // ─── EXPAND / MINIMIZE PANELS ─────────────────────────
 const myVideoPanel = document.getElementById('myVideoPanel');
-const partnerVideoPanel = document.getElementById('partnerVideoPanel');
 const ytPlayerWrapper = document.getElementById('ytPlayerWrapper');
 
 const originalParents = new Map();
@@ -163,7 +162,7 @@ document.getElementById('ytExpandBtn').addEventListener('click', () => {
     document.body.classList.add('has-expanded');
 
     // PIP video panels
-    [myVideoPanel, partnerVideoPanel].forEach(vp => {
+    Array.from(document.querySelectorAll('.video-panel')).forEach(vp => {
         originalParents.set(vp, { parent: vp.parentNode, next: vp.nextSibling });
         document.body.appendChild(vp);
         vp.classList.add('pip');
@@ -202,32 +201,31 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
 
         // PIP for video panels
         if (targetId === 'ytPlayerWrapper') {
-            [myVideoPanel, partnerVideoPanel].forEach(vp => {
+            Array.from(document.querySelectorAll('.video-panel')).forEach(vp => {
                 originalParents.set(vp, { parent: vp.parentNode, next: vp.nextSibling });
                 document.body.appendChild(vp);
                 vp.classList.add('pip');
             });
-        } else if (targetId === 'myVideoPanel') {
-            originalParents.set(partnerVideoPanel, { parent: partnerVideoPanel.parentNode, next: partnerVideoPanel.nextSibling });
-            document.body.appendChild(partnerVideoPanel);
-            partnerVideoPanel.classList.add('pip');
-        } else if (targetId === 'partnerVideoPanel') {
-            originalParents.set(myVideoPanel, { parent: myVideoPanel.parentNode, next: myVideoPanel.nextSibling });
-            document.body.appendChild(myVideoPanel);
-            myVideoPanel.classList.add('pip');
+        } else {
+            Array.from(document.querySelectorAll('.video-panel')).forEach(vp => {
+                if (vp.id !== targetId) {
+                    originalParents.set(vp, { parent: vp.parentNode, next: vp.nextSibling });
+                    document.body.appendChild(vp);
+                    vp.classList.add('pip');
+                }
+            });
         }
     });
 });
 
 // Allow clicking a PIP to swap and maximize it instead
-[myVideoPanel, partnerVideoPanel].forEach(panel => {
-    panel.addEventListener('click', (e) => {
-        if (panel.classList.contains('pip')) {
-            // Find the expand button for this panel and click it
-            const btn = panel.querySelector('.expand-btn');
-            if (btn) btn.click();
-        }
-    });
+document.body.addEventListener('click', (e) => {
+    const pipPanel = e.target.closest('.video-panel.pip');
+    if (pipPanel) {
+        // Find the expand button for this panel and click it
+        const btn = pipPanel.querySelector('.expand-btn');
+        if (btn) btn.click();
+    }
 });
 
 
@@ -235,17 +233,11 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
 // ─── DOM REFS ─────────────────────────────────────────
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
 const myNameDisplay = document.getElementById('myNameDisplay');
-const myLabel = document.getElementById('myLabel');
-const myPlaceholderName = document.getElementById('myPlaceholderName');
-const partnerLabel = document.getElementById('partnerLabel');
-const partnerPlaceholderName = document.getElementById('partnerPlaceholderName');
 const connectionStatus = document.getElementById('connectionStatus');
 const statusDot = connectionStatus.querySelector('.status-dot');
 const statusText = connectionStatus.querySelector('.status-text');
 const myVideo = document.getElementById('myVideo');
-const partnerVideo = document.getElementById('partnerVideo');
 const myPlaceholder = document.getElementById('myPlaceholder');
-const partnerPlaceholder = document.getElementById('partnerPlaceholder');
 const muteBtn = document.getElementById('muteBtn');
 const videoBtn = document.getElementById('videoBtn');
 const startCallBtn = document.getElementById('startCallBtn');
@@ -270,8 +262,6 @@ const ytSyncText = document.getElementById('ytSyncText');
 // ─── INIT UI ──────────────────────────────────────────
 roomCodeDisplay.textContent = roomId;
 myNameDisplay.textContent = myName;
-myLabel.textContent = `${myName} 🌙`;
-myPlaceholderName.textContent = myName;
 
 // ─── TOAST ────────────────────────────────────────────
 function toast(msg, type = 'info', duration = 3500) {
