@@ -706,27 +706,43 @@ async function handleSyncMessage(msg) {
 //  PLAYLIST  (persisted per room in localStorage)
 // ─────────────────────────────────────────────────────
 const PLAYLIST_KEY = `ourspace_playlist_${roomId}`;
-let playlist = [];
+const PERSONAL_PLAYLIST_KEY = 'ourspace_personal_playlist';
+let playlist = []; // Room playlist
+let personalPlaylist = []; // Personal playlist
+let activePlaylistTab = 'room'; // 'room' | 'personal'
 
 function loadPlaylist() {
     try { playlist = JSON.parse(localStorage.getItem(PLAYLIST_KEY) || '[]'); } catch (e) { playlist = []; }
+    try { personalPlaylist = JSON.parse(localStorage.getItem(PERSONAL_PLAYLIST_KEY) || '[]'); } catch (e) { personalPlaylist = []; }
     renderPlaylist();
 }
 
 function savePlaylist() {
     localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
+    localStorage.setItem(PERSONAL_PLAYLIST_KEY, JSON.stringify(personalPlaylist));
+}
+
+function getActivePlaylist() {
+    return activePlaylistTab === 'room' ? playlist : personalPlaylist;
 }
 
 function renderPlaylist() {
+    const list = getActivePlaylist();
     const container = document.getElementById('playlistItems');
     const empty = document.getElementById('playlistEmpty');
     const count = document.getElementById('playlistCount');
-    count.textContent = playlist.length + (playlist.length === 1 ? ' song' : ' songs');
-    if (playlist.length === 0) {
+    const title = document.getElementById('playlistTitle');
+
+    if (title) title.textContent = activePlaylistTab === 'room' ? 'Room Playlist' : 'Personal Playlist';
+    count.textContent = list.length + (list.length === 1 ? ' song' : ' songs');
+
+    document.querySelectorAll('.pl-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activePlaylistTab));
+
+    if (list.length === 0) {
         container.innerHTML = ''; empty.style.display = 'block'; return;
     }
     empty.style.display = 'none';
-    container.innerHTML = playlist.map((item, i) => `
+    container.innerHTML = list.map((item, i) => `
         <div class="pl-item ${ytVideoId === item.videoId ? 'pl-item--active' : ''}" data-i="${i}">
             <img class="pl-thumb" src="https://img.youtube.com/vi/${item.videoId}/mqdefault.jpg" alt="" loading="lazy" />
             <div class="pl-title" title="${item.title}">${item.title}</div>
@@ -738,35 +754,52 @@ function renderPlaylist() {
     `).join('');
 }
 
+// Tab listeners
+document.querySelectorAll('.pl-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        activePlaylistTab = tab.dataset.tab;
+        renderPlaylist();
+    });
+});
+
 document.getElementById('addToPlaylistBtn').addEventListener('click', async () => {
     if (!ytVideoId) return;
-    if (playlist.find(p => p.videoId === ytVideoId)) { toast('Already in playlist!', 'info'); return; }
-    const title = ytTrackTitle.textContent && ytTrackTitle.textContent !== '—'
-        ? ytTrackTitle.textContent
-        : ytVideoId;
+    const list = getActivePlaylist();
+    if (list.find(p => p.videoId === ytVideoId)) { toast('Already in playlist!', 'info'); return; }
+
+    const titleEL = document.getElementById('ytTrackTitle');
+    const title = titleEL.textContent && titleEL.textContent !== '—' ? titleEL.textContent : ytVideoId;
+
     const item = { videoId: ytVideoId, title, addedAt: Date.now() };
-    playlist.push(item);
+    list.push(item);
     savePlaylist();
     renderPlaylist();
-    // Sync to partner
-    sendSync({ type: 'playlist_add', item });
-    toast('Added to playlist! 📋', 'success');
+
+    // Sync to partner only if acting on Room playlist
+    if (activePlaylistTab === 'room') {
+        sendSync({ type: 'playlist_add', item });
+    }
+    toast(`Added to ${activePlaylistTab === 'room' ? 'Room' : 'Personal'} Playlist! 📋`, 'success');
 });
 
 window.playFromPlaylist = function (i) {
-    const item = playlist[i];
+    const item = getActivePlaylist()[i];
     if (!item) return;
     loadYouTubeVideo(item.videoId, 0, true);
     sendSync({ type: 'yt_load', videoId: item.videoId, sentBy: myName });
 };
 
 window.deleteFromPlaylist = function (i) {
-    const removed = playlist[i];
-    playlist.splice(i, 1);
+    const list = getActivePlaylist();
+    const removed = list[i];
+    list.splice(i, 1);
     savePlaylist();
     renderPlaylist();
-    // Sync removal to partner
-    if (removed) sendSync({ type: 'playlist_remove', videoId: removed.videoId });
+
+    // Sync removal to partner only if acting on Room playlist
+    if (activePlaylistTab === 'room' && removed) {
+        sendSync({ type: 'playlist_remove', videoId: removed.videoId });
+    }
 };
 
 // ─────────────────────────────────────────────────────
