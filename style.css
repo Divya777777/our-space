@@ -2255,3 +2255,19 @@ body {
   color: var(--accent-purple);
   font-size: 0.8rem;
 }
+
+/* ───────────────────────────────────────────────────────── */
+/*  ALONE MODE & EXPANDED RESOLUTION FIXES                   */
+/* ───────────────────────────────────────────────────────── */
+.video-grid.alone {
+  grid-template-rows: 1fr;
+}
+
+.video-grid.alone #partnerVideoPanel {
+  display: none !important;
+}
+
+.video-panel.expanded .video-element {
+  object-fit: contain !important;
+  background: black;
+}
