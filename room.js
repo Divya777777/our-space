@@ -94,7 +94,17 @@ const myVideoPanel = document.getElementById('myVideoPanel');
 const partnerVideoPanel = document.getElementById('partnerVideoPanel');
 const ytPlayerWrapper = document.getElementById('ytPlayerWrapper');
 
+// Track original parents so we can restore panels
+const originalParents = new Map();
+
 function collapseAll() {
+    // Restore any moved elements back to their original parents
+    originalParents.forEach((info, el) => {
+        if (el.parentNode === document.body) {
+            info.parent.insertBefore(el, info.next);
+        }
+    });
+    originalParents.clear();
     document.querySelectorAll('.expanded, .pip').forEach(el => el.classList.remove('expanded', 'pip'));
     document.querySelectorAll('.expand-btn').forEach(b => { b.textContent = '⛶'; b.title = 'Maximize'; });
     document.body.classList.remove('has-expanded');
@@ -107,27 +117,35 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
         if (!panel) return;
 
         if (panel.classList.contains('expanded')) {
-            // Minimize everything
             collapseAll();
             return;
         }
 
-        // Collapse any previous expansion first
         collapseAll();
 
-        // Expand this panel
+        // Save original position, then move to body
+        originalParents.set(panel, { parent: panel.parentNode, next: panel.nextSibling });
+        document.body.appendChild(panel);
+
         panel.classList.add('expanded');
         btn.textContent = '✕';
         btn.title = 'Minimize';
         document.body.classList.add('has-expanded');
 
-        // Make video panels into PIP if something else is expanded
+        // PIP for video panels
         if (targetId === 'ytPlayerWrapper') {
-            myVideoPanel.classList.add('pip');
-            partnerVideoPanel.classList.add('pip');
+            [myVideoPanel, partnerVideoPanel].forEach(vp => {
+                originalParents.set(vp, { parent: vp.parentNode, next: vp.nextSibling });
+                document.body.appendChild(vp);
+                vp.classList.add('pip');
+            });
         } else if (targetId === 'myVideoPanel') {
+            originalParents.set(partnerVideoPanel, { parent: partnerVideoPanel.parentNode, next: partnerVideoPanel.nextSibling });
+            document.body.appendChild(partnerVideoPanel);
             partnerVideoPanel.classList.add('pip');
         } else if (targetId === 'partnerVideoPanel') {
+            originalParents.set(myVideoPanel, { parent: myVideoPanel.parentNode, next: myVideoPanel.nextSibling });
+            document.body.appendChild(myVideoPanel);
             myVideoPanel.classList.add('pip');
         }
     });
