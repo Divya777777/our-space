@@ -94,17 +94,45 @@ const myVideoPanel = document.getElementById('myVideoPanel');
 const partnerVideoPanel = document.getElementById('partnerVideoPanel');
 const ytPlayerWrapper = document.getElementById('ytPlayerWrapper');
 
-// Track original parents so we can restore panels
 const originalParents = new Map();
+let ancestorOverrides = []; // track ancestors we modified
+
+function clearAncestorOverrides() {
+    ancestorOverrides.forEach(el => {
+        el.style.removeProperty('transform');
+        el.style.removeProperty('backdrop-filter');
+        el.style.removeProperty('-webkit-backdrop-filter');
+        el.style.removeProperty('filter');
+        el.style.removeProperty('overflow');
+        el.style.removeProperty('contain');
+    });
+    ancestorOverrides = [];
+}
+
+function overrideAncestors(el) {
+    // Walk up from el to body, disable properties that create containing blocks
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+        node.style.setProperty('transform', 'none', 'important');
+        node.style.setProperty('backdrop-filter', 'none', 'important');
+        node.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+        node.style.setProperty('filter', 'none', 'important');
+        node.style.setProperty('overflow', 'visible', 'important');
+        node.style.setProperty('contain', 'none', 'important');
+        ancestorOverrides.push(node);
+        node = node.parentElement;
+    }
+}
 
 function collapseAll() {
-    // Restore any moved elements back to their original parents
+    // Restore moved video panels
     originalParents.forEach((info, el) => {
         if (el.parentNode === document.body) {
             info.parent.insertBefore(el, info.next);
         }
     });
     originalParents.clear();
+    clearAncestorOverrides();
     document.querySelectorAll('.expanded, .pip').forEach(el => el.classList.remove('expanded', 'pip'));
     document.querySelectorAll('.expand-btn').forEach(b => { b.textContent = '⛶'; b.title = 'Maximize'; });
     document.body.classList.remove('has-expanded');
@@ -123,9 +151,14 @@ document.querySelectorAll('.expand-btn').forEach(btn => {
 
         collapseAll();
 
-        // Save original position, then move to body
-        originalParents.set(panel, { parent: panel.parentNode, next: panel.nextSibling });
-        document.body.appendChild(panel);
+        // For YT player: don't move, override ancestors instead (moving kills iframe)
+        if (targetId === 'ytPlayerWrapper') {
+            overrideAncestors(panel);
+        } else {
+            // Video panels can be safely moved to body
+            originalParents.set(panel, { parent: panel.parentNode, next: panel.nextSibling });
+            document.body.appendChild(panel);
+        }
 
         panel.classList.add('expanded');
         btn.textContent = '✕';
