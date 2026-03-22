@@ -11,35 +11,96 @@ const roomPin = sessionStorage.getItem('ourspace_pin') || '';
 
 if (!roomId) { window.location.href = 'index.html'; }
 
-// ─── STAR BACKGROUND ─────────────────────────────────
+// ─── ENHANCED STAR BACKGROUND ─────────────────────────
 (function initStars() {
     const canvas = document.getElementById('starCanvas');
     const ctx = canvas.getContext('2d');
     let stars = [], W, H;
+    const starColors = [
+        [255, 255, 255],   // white
+        [200, 220, 255],   // blue-white
+        [255, 240, 220],   // warm
+        [180, 200, 255],   // blue
+        [255, 220, 200],   // amber
+    ];
     function resize() {
-        W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight;
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
         stars = [];
-        for (let i = 0; i < 220; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.2, alpha: Math.random(), speed: Math.random() * 0.005 + 0.002, dir: Math.random() > 0.5 ? 1 : -1 });
+        for (let i = 0; i < 400; i++) {
+            const col = starColors[Math.floor(Math.random() * starColors.length)];
+            const isBright = Math.random() < 0.08; // 8% are bright feature stars
+            stars.push({
+                x: Math.random() * W,
+                y: Math.random() * H,
+                r: isBright ? Math.random() * 2 + 1.5 : Math.random() * 1.2 + 0.2,
+                alpha: Math.random(),
+                speed: isBright ? Math.random() * 0.008 + 0.004 : Math.random() * 0.004 + 0.001,
+                dir: Math.random() > 0.5 ? 1 : -1,
+                col,
+                glow: isBright,
+            });
+        }
     }
     function draw() {
         ctx.clearRect(0, 0, W, H);
-        for (const s of stars) { s.alpha += s.speed * s.dir; if (s.alpha >= 1 || s.alpha <= 0.05) s.dir *= -1; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,255,255,${s.alpha.toFixed(2)})`; ctx.fill(); }
+        for (const s of stars) {
+            s.alpha += s.speed * s.dir;
+            if (s.alpha >= 1) { s.alpha = 1; s.dir = -1; }
+            if (s.alpha <= 0.03) { s.alpha = 0.03; s.dir = 1; }
+            const [r, g, b] = s.col;
+            if (s.glow) {
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = `rgba(${r},${g},${b},${(s.alpha * 0.7).toFixed(2)})`;
+            }
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${r},${g},${b},${s.alpha.toFixed(2)})`;
+            ctx.fill();
+            if (s.glow) ctx.shadowBlur = 0;
+        }
         requestAnimationFrame(draw);
     }
     window.addEventListener('resize', resize); resize(); draw();
 })();
 
+// ─── REALISTIC SHOOTING STARS ─────────────────────────
 (function initShootingStars() {
     const container = document.getElementById('shootingStars');
     function spawn() {
-        const el = document.createElement('div'); el.className = 'shooting-star';
-        el.style.setProperty('--angle', (Math.random() * 30 + 20) + 'deg');
-        el.style.top = Math.random() * 60 + '%'; el.style.left = Math.random() * 80 + '%';
-        el.style.animationDuration = (Math.random() * 0.8 + 0.6) + 's';
-        container.appendChild(el); setTimeout(() => el.remove(), 1500);
+        const el = document.createElement('div');
+        el.className = 'shooting-star';
+        const angle = Math.random() * 25 + 25;
+        const len = Math.random() * 120 + 60;
+        const dur = Math.random() * 0.6 + 0.5;
+        el.style.setProperty('--angle', angle + 'deg');
+        el.style.setProperty('--trail-len', len + 'px');
+        el.style.top = Math.random() * 50 + '%';
+        el.style.left = Math.random() * 70 + 10 + '%';
+        el.style.animationDuration = dur + 's';
+        container.appendChild(el);
+        setTimeout(() => el.remove(), 1800);
     }
-    setInterval(spawn, 3200); setTimeout(spawn, 1000);
+    // Spawn more frequently with occasional bursts
+    setInterval(spawn, 2200);
+    setTimeout(spawn, 500);
+    setTimeout(spawn, 1200);
+    // Occasional double
+    setInterval(() => { spawn(); setTimeout(spawn, 200); }, 7000);
 })();
+
+// ─── EXPAND / MINIMIZE PANELS ─────────────────────────
+document.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-target');
+        const panel = document.getElementById(targetId);
+        if (!panel) return;
+        const isExpanded = panel.classList.toggle('expanded');
+        btn.textContent = isExpanded ? '✕' : '⛶';
+        btn.title = isExpanded ? 'Minimize' : 'Maximize';
+    });
+});
+
 
 // ─── DOM REFS ─────────────────────────────────────────
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
