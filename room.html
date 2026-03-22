@@ -217,6 +217,7 @@
                             <button class="pl-menu-btn" id="plMenuBtn" title="Playlist Options">⋮</button>
                             <div class="pl-menu-popup" id="plMenuPopup">
                                 <button id="plMenuRename">✏️ Rename</button>
+                                <button id="plMenuCopy">↗️ Send copy to Room</button>
                                 <button id="plMenuMove">↔️ Move to Personal</button>
                                 <button id="plMenuDelete" class="danger">🗑️ Delete</button>
                             </div>
@@ -229,6 +230,27 @@
                 <div class="playlist-items" id="playlistItems"></div>
             </div>
         </section>
+
+        <!-- Chat Panel (Floating) -->
+        <button class="chat-toggle-btn" id="chatToggleBtn" title="Open Room Chat">💬
+            <span class="chat-badge" id="chatBadge" style="display: none;">0</span>
+        </button>
+        <div class="chat-panel" id="chatPanel">
+            <div class="chat-header">
+                <span class="chat-title">Room Chat <small>🔒 Secure Local</small></span>
+                <button class="chat-close-btn" id="chatCloseBtn">✕</button>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages populate here -->
+            </div>
+            <div class="chat-input-area">
+                <label for="chatFileInput" class="chat-attach-btn" title="Send File/Image">📎</label>
+                <input type="file" id="chatFileInput" style="display: none;" />
+                <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..."
+                    autocomplete="off" />
+                <button class="chat-send-btn" id="chatSendBtn">➤</button>
+            </div>
+        </div>
 
     </main>
 

@@ -642,6 +642,22 @@ async function handleSyncMessage(msg) {
                 sendSync({ type: 'playlist_sync', roomPlaylists });
             }
         }
+    }
+
+
+    // ── Secure Chat Messaging ─────────────────────────────────
+    if (msg.type === 'chat_msg') {
+        const chatMsg = msg.message;
+        chatMsg.senderLabel = msg.sentBy || "Partner";
+        chatMsg.sender = 'partner';
+        // Check for duplicates
+        if (!chatDB_ready || !document.querySelector(`[data-chat-id="${chatMsg.id}"]`)) {
+            appendChatMessage(chatMsg, true);
+            const panel = document.getElementById('chatPanel');
+            if (!panel || !panel.classList.contains('show')) {
+                toast(`New message from ${chatMsg.senderLabel} 💬`, 'info');
+            }
+        }
         return;
     }
 
@@ -915,6 +931,10 @@ const plMenuPopup = document.getElementById('plMenuPopup');
 if (plMenuBtn && plMenuPopup) {
     plMenuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const targetTab = activePlaylistTab === 'room' ? 'Personal' : 'Room';
+        document.getElementById('plMenuMove').innerHTML = `↔️ Move to ${targetTab}`;
+        const copyBtn = document.getElementById('plMenuCopy');
+        if (copyBtn) copyBtn.innerHTML = `↗️ Send copy to ${targetTab}`;
         plMenuPopup.classList.toggle('show');
     });
 
@@ -926,10 +946,6 @@ if (plMenuBtn && plMenuPopup) {
 
     document.getElementById('plMenuRename').addEventListener('click', () => {
         plMenuPopup.classList.remove('show');
-        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
-            toast('Cannot rename default playlist.', 'info');
-            return;
-        }
         const newName = prompt(`Rename "${activePlaylistName}" to:`, activePlaylistName);
         if (newName && newName.trim() && newName !== activePlaylistName) {
             const cleanName = newName.trim();
@@ -947,6 +963,28 @@ if (plMenuBtn && plMenuPopup) {
             toast('Playlist renamed!', 'success');
         }
     });
+
+    const copyBtnClick = document.getElementById('plMenuCopy');
+    if (copyBtnClick) {
+        copyBtnClick.addEventListener('click', () => {
+            plMenuPopup.classList.remove('show');
+            const sourceDict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
+            const targetDict = activePlaylistTab === 'room' ? personalPlaylists : roomPlaylists;
+
+            if (targetDict[activePlaylistName]) {
+                toast(`Playlist "${activePlaylistName}" already exists there.`, 'error');
+                return;
+            }
+
+            targetDict[activePlaylistName] = [...(sourceDict[activePlaylistName] || [])];
+            savePlaylist();
+
+            if (activePlaylistTab === 'personal') {
+                sendSync({ type: 'playlist_sync', roomPlaylists });
+            }
+            toast('Playlist copied! 📋', 'success');
+        });
+    }
 
     document.getElementById('plMenuMove').addEventListener('click', () => {
         plMenuPopup.classList.remove('show');
@@ -1062,5 +1100,165 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
     const sendName = () => { if (dataConn && dataConn.open) sendSync({ type: 'peer_name', name: myName }); };
     setTimeout(sendName, 1500);
     setTimeout(sendName, 3500);
+    // ─────────────────────────────────────────────────────
+    //  SECURE LOCAL CHAT (IndexedDB + PeerJS Data Channel)
+    // ─────────────────────────────────────────────────────
+    const CHAT_DB_NAME = `OurSpaceChat_${roomId}`;
+    const CHAT_DB_VERSION = 1;
+    let chatDB;
+    let chatDB_ready = false;
+    let unreadChatCount = 0;
+
+    function initChatDB() {
+        const request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+        request.onupgradeneeded = e => {
+            chatDB = e.target.result;
+            if (!chatDB.objectStoreNames.contains('messages')) {
+                chatDB.createObjectStore('messages', { keyPath: 'id' });
+            }
+        };
+        request.onsuccess = e => {
+            chatDB = e.target.result;
+            chatDB_ready = true;
+            loadChatHistory();
+        };
+        request.onerror = e => console.error("Chat DB error:", e);
+    }
+
+    function loadChatHistory() {
+        if (!chatDB) return;
+        const tx = chatDB.transaction('messages', 'readonly');
+        const store = tx.objectStore('messages');
+        const req = store.getAll();
+        req.onsuccess = () => {
+            const msgs = req.result;
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+            msgs.forEach(msg => appendChatMessage(msg, false));
+            container.scrollTop = container.scrollHeight;
+        };
+    }
+
+    function appendChatMessage(msg, saveToDb = true) {
+        if (saveToDb && chatDB) {
+            const tx = chatDB.transaction('messages', 'readwrite');
+            tx.objectStore('messages').put(msg);
+        }
+
+        const container = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        const isMe = msg.sender === myName;
+        div.className = `chat-msg ${isMe ? 'me' : 'partner'}`;
+        div.dataset.chatId = msg.id;
+
+        let contentHtml = '';
+        if (msg.type === 'image') {
+            contentHtml = `<img src="${msg.content}" class="chat-img-preview" alt="Image" />`;
+        } else if (msg.type === 'file') {
+            contentHtml = `<a href="${msg.content}" download="${msg.fileName}" class="chat-file-preview" target="_blank">📄 ${msg.fileName}</a>`;
+        } else {
+            const safeText = msg.content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            contentHtml = `<span>${safeText}</span>`;
+        }
+
+        const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        div.innerHTML = `
+        <div class="chat-bubble">${contentHtml}</div>
+        <div class="chat-meta">
+            <span>${isMe ? 'You' : msg.senderLabel}</span>
+            <span>${timeStr}</span>
+        </div>
+    `;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+
+        const panel = document.getElementById('chatPanel');
+        if (panel && !panel.classList.contains('show') && !isMe) {
+            unreadChatCount++;
+            const badge = document.getElementById('chatBadge');
+            if (badge) {
+                badge.textContent = unreadChatCount;
+                badge.style.display = 'block';
+            }
+        }
+    }
+
+    function sendChatMessage(text, type = 'text', fileData = null, fileName = null) {
+        const msg = {
+            id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            sender: myName,
+            sentBy: myName,
+            senderLabel: myName,
+            type: type,
+            content: type === 'text' ? text : fileData,
+            fileName: fileName,
+            timestamp: Date.now()
+        };
+        appendChatMessage(msg, true);
+        sendSync({ type: 'chat_msg', message: msg, sentBy: myName });
+    }
+
+    // GUI Listeners
+    const chatToggleBtn = document.getElementById('chatToggleBtn');
+    const chatPanel = document.getElementById('chatPanel');
+    const chatCloseBtn = document.getElementById('chatCloseBtn');
+    const chatInput = document.getElementById('chatInput');
+    const chatSendBtn = document.getElementById('chatSendBtn');
+    const chatFileInput = document.getElementById('chatFileInput');
+
+    if (chatToggleBtn && chatPanel) {
+        chatToggleBtn.addEventListener('click', () => {
+            chatPanel.classList.toggle('show');
+            if (chatPanel.classList.contains('show')) {
+                unreadChatCount = 0;
+                const badge = document.getElementById('chatBadge');
+                if (badge) badge.style.display = 'none';
+                chatInput.focus();
+                const container = document.getElementById('chatMessages');
+                container.scrollTop = container.scrollHeight;
+            }
+        });
+        chatCloseBtn.addEventListener('click', () => {
+            chatPanel.classList.remove('show');
+        });
+    }
+
+    if (chatSendBtn && chatInput) {
+        chatSendBtn.addEventListener('click', () => {
+            const val = chatInput.value.trim();
+            if (val) {
+                sendChatMessage(val);
+                chatInput.value = '';
+            }
+        });
+        chatInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') chatSendBtn.click();
+        });
+    }
+
+    if (chatFileInput) {
+        chatFileInput.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.size > 2 * 1024 * 1024) {
+                toast('File too large! Keep under 2MB for syncing.', 'error');
+                e.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const base64 = ev.target.result;
+                const type = file.type.startsWith('image/') ? 'image' : 'file';
+                sendChatMessage('', type, base64, file.name);
+                e.target.value = '';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Start Chat DB
+    initChatDB();
 })();
 
