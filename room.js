@@ -440,6 +440,10 @@ async function handleSyncMessage(msg) {
             toast('Partner connected! 🌙', 'success');
             ytSyncText.textContent = 'Partner connected 🌙';
             sendSync({ type: 'peer_name', name: myName });
+            // Share our full playlist so partner sees everything we've saved
+            if (playlist.length > 0) {
+                sendSync({ type: 'playlist_sync', playlist });
+            }
         }
         return;
     }
@@ -459,6 +463,36 @@ async function handleSyncMessage(msg) {
                 } catch (e) { toast('Could not access camera/mic.', 'error'); }
             }
         }
+        return;
+    }
+
+    // ── Playlist sync from partner ─────────────────────────
+    if (msg.type === 'playlist_sync') {
+        // Merge: add any songs from partner we don't already have
+        let changed = false;
+        for (const item of (msg.playlist || [])) {
+            if (!playlist.find(p => p.videoId === item.videoId)) {
+                playlist.push(item);
+                changed = true;
+            }
+        }
+        if (changed) { savePlaylist(); renderPlaylist(); toast('Playlist synced 📋', 'info'); }
+        return;
+    }
+
+    if (msg.type === 'playlist_add') {
+        if (msg.item && !playlist.find(p => p.videoId === msg.item.videoId)) {
+            playlist.push(msg.item);
+            savePlaylist();
+            renderPlaylist();
+            toast(`${msg.item.title.slice(0, 30)}… added to playlist 🎵`, 'info');
+        }
+        return;
+    }
+
+    if (msg.type === 'playlist_remove') {
+        const idx = playlist.findIndex(p => p.videoId === msg.videoId);
+        if (idx !== -1) { playlist.splice(idx, 1); savePlaylist(); renderPlaylist(); }
         return;
     }
 
@@ -545,9 +579,12 @@ document.getElementById('addToPlaylistBtn').addEventListener('click', async () =
     const title = ytTrackTitle.textContent && ytTrackTitle.textContent !== '—'
         ? ytTrackTitle.textContent
         : ytVideoId;
-    playlist.push({ videoId: ytVideoId, title, addedAt: Date.now() });
+    const item = { videoId: ytVideoId, title, addedAt: Date.now() };
+    playlist.push(item);
     savePlaylist();
     renderPlaylist();
+    // Sync to partner
+    sendSync({ type: 'playlist_add', item });
     toast('Added to playlist! 📋', 'success');
 });
 
@@ -559,9 +596,12 @@ window.playFromPlaylist = function (i) {
 };
 
 window.deleteFromPlaylist = function (i) {
+    const removed = playlist[i];
     playlist.splice(i, 1);
     savePlaylist();
     renderPlaylist();
+    // Sync removal to partner
+    if (removed) sendSync({ type: 'playlist_remove', videoId: removed.videoId });
 };
 
 // ─────────────────────────────────────────────────────
