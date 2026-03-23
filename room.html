@@ -121,7 +121,8 @@
                 <span class="status-dot disconnected"></span>
                 <span class="status-text">Waiting for partner…</span>
             </div>
-            <div class="encryption-status" id="encryptionStatus" style="display: none; margin-left: 15px; font-size: 12px; color: #4ade80; opacity: 0.8;">
+            <div class="encryption-status" id="encryptionStatus"
+                style="display: none; margin-left: 15px; font-size: 12px; color: #4ade80; opacity: 0.8;">
                 🔐 End-to-end encrypted
             </div>
         </div>
@@ -337,6 +338,46 @@
             <div style="display: flex; gap: 10px; margin-top:20px;">
                 <button id="authAcceptBtn" class="primary-btn" style="flex:1">Accept</button>
                 <button id="authRejectBtn" class="danger-btn" style="flex:1">Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incoming Call Notification -->
+    <div id="incomingCallModal"
+        style="display:none; position:fixed; inset:0; z-index:200000; background:rgba(0,0,0,0.82); backdrop-filter:blur(14px); justify-content:center; align-items:center;">
+        <div
+            style="background:linear-gradient(135deg,rgba(20,12,50,0.98),rgba(8,5,28,0.98)); border:1px solid rgba(155,109,255,0.4); border-radius:28px; padding:48px 40px; width:min(340px,88vw); text-align:center; box-shadow:0 32px 80px rgba(0,0,0,0.8),0 0 60px rgba(155,109,255,0.2); animation:callSlideUp 0.4s cubic-bezier(0.34,1.56,0.64,1);">
+            <div id="callRingAnim"
+                style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,#1a8a3f,#147c35);margin:0 auto 24px;display:flex;align-items:center;justify-content:center;animation:callRing 1s ease-in-out infinite;box-shadow:0 0 0 0 rgba(29,185,84,0.5);">
+                <svg viewBox="0 0 24 24" fill="white" width="44" height="44">
+                    <path
+                        d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" />
+                </svg>
+            </div>
+            <div
+                style="font-family:'Playfair Display',serif;font-size:1.1rem;color:rgba(255,255,255,0.6);margin-bottom:6px;letter-spacing:0.05em;">
+                Incoming Call</div>
+            <div id="callerName"
+                style="font-family:'Playfair Display',serif;font-size:1.8rem;color:#fff;margin-bottom:32px;font-weight:600;">
+                Room</div>
+            <div style="display:flex;gap:20px;justify-content:center;">
+                <button id="declineCallBtn"
+                    style="width:68px;height:68px;border-radius:50%;border:none;background:linear-gradient(135deg,#c0392b,#a93226);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(192,57,43,0.5);transition:all 0.2s;"
+                    title="Decline">
+                    <svg viewBox="0 0 24 24" fill="white" width="30" height="30">
+                        <path
+                            d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"
+                            transform="rotate(135 12 12)" />
+                    </svg>
+                </button>
+                <button id="acceptCallBtn"
+                    style="width:68px;height:68px;border-radius:50%;border:none;background:linear-gradient(135deg,#1a8a3f,#147c35);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(29,185,84,0.5);transition:all 0.2s;"
+                    title="Answer">
+                    <svg viewBox="0 0 24 24" fill="white" width="30" height="30">
+                        <path
+                            d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" />
+                    </svg>
+                </button>
             </div>
         </div>
     </div>

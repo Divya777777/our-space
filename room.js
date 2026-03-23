@@ -623,9 +623,9 @@ async function setupPeer() {
 
     // Auto-detect: use local server if running on localhost/custom port, otherwise use cloud
     const isLocalServer = window.location.protocol === 'http:' &&
-                         (window.location.hostname === 'localhost' ||
-                          window.location.hostname === '127.0.0.1' ||
-                          window.location.port !== '');
+        (window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.port !== '');
 
     // Better ICE server configuration for more reliable connections
     const peerConfig = {
@@ -659,7 +659,7 @@ async function setupPeer() {
         peer.on('open', id => {
             isHost = true;
             console.log('[HOST] Successfully registered as host with ID:', id);
-            toast(`Room ready! You are the Host.`, 'info', 5000);
+            toast(`Room created! You are the Host. 🌙`, 'success', 5000);
             setStatus('connected', 'Waiting for guests…');
             setupHostListeners();
             resolve();
@@ -673,6 +673,7 @@ async function setupPeer() {
                 peer = new Peer(peerConfig);
                 peer.on('open', id => {
                     console.log('[GUEST] Successfully registered as guest with ID:', id);
+                    toast('Room already exists — joining as guest! 🚶', 'info', 4000);
                     setStatus('connecting', 'Connecting to Host…');
                     connectToHost();
                     resolve();
@@ -1069,7 +1070,7 @@ setInterval(() => {
 window.deleteAllRoomData = deleteAllRoomData;
 
 // Security status command (for debugging/admin)
-window.showSecurityStatus = async function() {
+window.showSecurityStatus = async function () {
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔐 SECURITY STATUS REPORT');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -1323,6 +1324,111 @@ startCallBtn.addEventListener('click', () => {
     if (isInCall) endCall(); else startCall();
 });
 
+// ─── RINGTONE SYSTEM (Web Audio API, no files needed) ───
+let ringtoneOscillators = [];
+let ringtoneInterval = null;
+
+function playRingtone() {
+    stopRingtone();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function ring() {
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0, ctx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.04);
+        gainNode.gain.setValueAtTime(0.18, ctx.currentTime + 0.15);
+        gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+        gainNode.connect(ctx.destination);
+
+        [880, 1100].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            osc.connect(gainNode);
+            osc.start(ctx.currentTime + i * 0.06);
+            osc.stop(ctx.currentTime + 0.3);
+            ringtoneOscillators.push(osc);
+        });
+    }
+
+    ring();
+    ringtoneInterval = setInterval(ring, 1800);
+    // Auto-stop after 30 seconds
+    setTimeout(stopRingtone, 30000);
+}
+
+function stopRingtone() {
+    if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; }
+    ringtoneOscillators.forEach(o => { try { o.stop(); } catch (_) { } });
+    ringtoneOscillators = [];
+}
+
+// ─── INCOMING CALL NOTIFICATION UI ───────────────────
+let pendingIncomingCall = null;
+
+function showIncomingCallUI(callerName, callObj) {
+    pendingIncomingCall = callObj;
+    document.getElementById('callerName').textContent = callerName;
+    const modal = document.getElementById('incomingCallModal');
+    modal.style.display = 'flex';
+    playRingtone();
+
+    // Request browser notification if app is in background
+    if (document.hidden && Notification.permission === 'granted') {
+        new Notification(`📞 Call from ${callerName}`, {
+            body: 'Tap to open Our Space and answer',
+            icon: '/favicon.ico'
+        });
+    } else if (Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+
+    document.getElementById('acceptCallBtn').onclick = () => {
+        stopRingtone();
+        modal.style.display = 'none';
+        if (pendingIncomingCall) answerIncomingCall(pendingIncomingCall);
+        pendingIncomingCall = null;
+    };
+    document.getElementById('declineCallBtn').onclick = () => {
+        stopRingtone();
+        modal.style.display = 'none';
+        if (pendingIncomingCall) { pendingIncomingCall.close(); }
+        pendingIncomingCall = null;
+    };
+}
+
+async function answerIncomingCall(call) {
+    const id = call.peer;
+    if (!peersMap[id]) return;
+
+    if (localStream) {
+        call.answer(localStream);
+        peersMap[id].callConn = call;
+        call.on('stream', stream => addVideoPanel(id, stream));
+        call.on('close', () => removeVideoPanel(id));
+    } else {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+            });
+            localStream = stream;
+            myVideo.srcObject = stream;
+            myVideo.classList.add('active');
+            myPlaceholder.style.display = 'none';
+            isInCall = true;
+            startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
+            startCallBtn.classList.add('end-call');
+            call.answer(stream);
+            peersMap[id].callConn = call;
+            call.on('stream', s => addVideoPanel(id, s));
+            call.on('close', () => removeVideoPanel(id));
+        } catch (e) {
+            toast('Could not access camera/mic.', 'error');
+        }
+    }
+}
+
 async function startCall() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
@@ -1340,12 +1446,15 @@ async function startCall() {
         startCallBtn.classList.add('end-call');
         isInCall = true;
 
-        broadcast({ type: 'call_request' });
-
-        Object.keys(peersMap).forEach(id => {
-            const call = peer.call(id, localStream);
-            if (call) handleOutboundCall(call, id);
-        });
+        // Notify all peers that a call is starting (so they see ring UI)
+        broadcast({ type: 'call_ring', callerName: myName });
+        // Small delay then actually call
+        setTimeout(() => {
+            Object.keys(peersMap).forEach(id => {
+                const call = peer.call(id, localStream);
+                if (call) handleOutboundCall(call, id);
+            });
+        }, 500);
 
     } catch (err) { toast('Could not access camera/mic.', 'error'); }
 }
@@ -1359,30 +1468,11 @@ function handleOutboundCall(call, id) {
 
 function handleIncomingCall(call) {
     const id = call.peer;
+    const callerName = peersMap[id]?.name || 'Someone';
     if (!peersMap[id]) return;
 
-    if (localStream) {
-        call.answer(localStream);
-        peersMap[id].callConn = call;
-        call.on('stream', stream => addVideoPanel(id, stream));
-        call.on('close', () => removeVideoPanel(id));
-    } else {
-        navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true, googEchoCancellation: true, googAutoGainControl: true, googNoiseSuppression: true, googHighpassFilter: true }
-        }).then(stream => {
-            localStream = stream;
-            myVideo.srcObject = stream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
-            isInCall = true;
-            startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
-            startCallBtn.classList.add('end-call');
-
-            call.answer(stream);
-            peersMap[id].callConn = call;
-            call.on('stream', s => addVideoPanel(id, s));
-            call.on('close', () => removeVideoPanel(id));
-        }).catch(() => toast('Could not access camera/mic.', 'error'));
-    }
+    // Show ring UI instead of auto-answering
+    showIncomingCallUI(callerName, call);
 }
 
 function addVideoPanel(id, stream) {
@@ -1674,32 +1764,13 @@ async function handleSyncMessage(msg, senderId) {
         return;
     }
 
-    // ── Call coordination ─────────────────────────────
-    if (msg.type === 'call_request') {
-        if (peer.id === peerIdA) {
-            if (localStream) attemptCall(); else startCall();
-        } else {
-            if (!localStream) {
-                try {
-                    localStream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: {
-                            noiseSuppression: true,
-                            echoCancellation: true,
-                            autoGainControl: true,
-                            googEchoCancellation: true,
-                            googAutoGainControl: true,
-                            googNoiseSuppression: true,
-                            googHighpassFilter: true
-                        }
-                    });
-                    myVideo.srcObject = localStream; myVideo.classList.add('active'); myPlaceholder.style.display = 'none';
-                    isInCall = true;
-                    startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
-                    startCallBtn.classList.add('end-call');
-                } catch (e) { toast('Could not access camera/mic.', 'error'); }
-            }
-        }
+    // ── Call coordination / ring notification ──────────
+    if (msg.type === 'call_ring' || msg.type === 'call_request') {
+        // The actual WebRTC call arrives via peer.on('call') — this is just the ring notification
+        const callerName = msg.callerName || peersMap[senderId]?.name || 'Someone';
+        toast(`📞 ${callerName} is calling…`, 'info', 5000);
+        playRingtone();
+        // Ring will stop automatically when WebRTC call arrives via handleIncomingCall
         return;
     }
 

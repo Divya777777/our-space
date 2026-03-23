@@ -1448,10 +1448,13 @@ body {
 /* ============================================================
    RESPONSIVE
    ============================================================ */
+/* ============================================================
+   RESPONSIVE — TABLET (≤900px)
+   ============================================================ */
 @media (max-width: 900px) {
   .room-main {
     grid-template-columns: 1fr;
-    padding: 80px 12px 20px;
+    padding: 75px 10px 20px;
     gap: 12px;
   }
 
@@ -1460,31 +1463,299 @@ body {
   }
 
   .room-header {
-    margin: 8px;
-    padding: 10px 14px;
+    margin: 6px;
+    padding: 10px 12px;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
+    border-radius: 14px;
   }
 
   .header-center {
     order: 3;
     flex-basis: 100%;
+    justify-content: center;
+  }
+
+  .header-right {
+    gap: 6px;
+  }
+
+  .start-call-btn {
+    padding: 9px 18px;
+    font-size: 0.85rem;
+  }
+
+  .leave-btn {
+    padding: 8px 14px;
+    font-size: 0.82rem;
   }
 }
 
-@media (max-width: 560px) {
+/* ============================================================
+   RESPONSIVE — MOBILE (≤600px)
+   ============================================================ */
+@media (max-width: 600px) {
+
+  /* ── Header ── */
+  .room-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    border-radius: 0 0 16px 16px;
+    padding: 10px 14px;
+    z-index: 9000;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    border-top: none;
+  }
+
+  .header-left {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .header-left .logo {
+    font-size: 0.95rem;
+  }
+
+  .room-info {
+    font-size: 0.7rem;
+  }
+
+  .room-code {
+    font-size: 0.75rem;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-center {
+    display: none;
+    /* Status shown via toast on mobile */
+  }
+
+  .header-right {
+    flex-direction: row;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .user-name-display {
+    display: none;
+    /* Too cluttered on mobile */
+  }
+
+  .start-call-btn {
+    padding: 9px 14px;
+    font-size: 0;
+    /* Hide text on mobile */
+    border-radius: 50px;
+    min-width: 40px;
+    height: 40px;
+    gap: 0;
+  }
+
+  .start-call-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .cinema-btn {
+    display: none;
+    /* Not essential on mobile */
+  }
+
+  .leave-btn {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+  }
+
+  /* ── Main layout ── */
+  .room-main {
+    grid-template-columns: 1fr;
+    padding: 70px 8px 16px;
+    gap: 10px;
+  }
+
+  /* ── Video Grid ── */
   .video-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .video-panel {
     aspect-ratio: 4/3;
+    border-radius: 14px;
   }
 
-  .room-header .room-info {
-    display: none;
+  .video-controls {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .vc-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  /* ── Music Section ── */
+  .music-section {
+    border-radius: 16px;
+    padding: 0;
+  }
+
+  .music-header {
+    padding: 14px 16px;
+  }
+
+  .music-title h2 {
+    font-size: 1.1rem;
+  }
+
+  .yt-input-row {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .yt-url-input {
+    font-size: 0.85rem;
+  }
+
+  .yt-play-btn {
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .playback-controls {
+    gap: 10px;
+    padding: 8px 12px;
+  }
+
+  .playlist-section {
+    padding: 0 12px 12px;
+  }
+
+  /* ── Chat Panel ── */
+  .chat-panel {
+    width: 100vw !important;
+    right: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 70vh !important;
+    transform: translateY(100%) !important;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  .chat-panel.open {
+    transform: translateY(0) !important;
+  }
+
+  .chat-toggle-btn {
+    bottom: 20px !important;
+    right: 16px !important;
+  }
+
+  .chat-messages {
+    max-height: calc(70vh - 130px) !important;
+  }
+
+  /* ── Toasts ── */
+  .toast-container {
+    bottom: 80px;
+    right: 10px;
+    left: 10px;
+  }
+
+  .toast {
+    width: 100%;
+    text-align: center;
   }
 }
+
+/* ============================================================
+   RESPONSIVE — LANDING PAGE (index.html) mobile
+   ============================================================ */
+@media (max-width: 600px) {
+  .index-page {
+    padding: 16px;
+    align-items: flex-start;
+    padding-top: 40px;
+  }
+
+  .hero {
+    max-width: 100%;
+  }
+
+  .hero-title {
+    font-size: clamp(2.4rem, 11vw, 3.2rem);
+  }
+
+  .hero-subtitle {
+    font-size: 0.88rem;
+    margin-bottom: 28px;
+  }
+
+  .join-card {
+    padding: 24px 20px;
+  }
+
+  .glass-input {
+    font-size: 16px;
+    /* Prevents iOS zoom on focus */
+    padding: 13px 10px 13px 0;
+  }
+
+  .enter-btn {
+    padding: 15px 20px;
+    font-size: 0.9rem;
+  }
+
+  .moon-corner {
+    width: 110px;
+    height: 110px;
+    top: -25px;
+    right: -25px;
+  }
+}
+
+/* ============================================================
+   CALL RING ANIMATIONS
+   ============================================================ */
+@keyframes callRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.55);
+  }
+
+  50% {
+    box-shadow: 0 0 0 24px rgba(29, 185, 84, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+  }
+}
+
+@keyframes callSlideUp {
+  from {
+    transform: translateY(40px) scale(0.92);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+
 
 /* ============================================================
    CINEMA MODE
