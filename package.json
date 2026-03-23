@@ -1,0 +1,24 @@
+{
+  "name": "our-space",
+  "version": "1.0.0",
+  "description": "Private peer-to-peer video chat and music streaming app for couples",
+  "main": "server.js",
+  "scripts": {
+    "start": "node start.js",
+    "server": "node server.js",
+    "dev": "node start.js"
+  },
+  "keywords": [
+    "webrtc",
+    "peer-to-peer",
+    "video-chat",
+    "private"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "peer": "^1.0.2",
+    "express": "^4.18.2",
+    "open": "^8.4.0"
+  }
+}

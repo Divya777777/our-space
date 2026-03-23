@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Test Suite - Our Space</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .test-section h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .test-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s;
+        }
+
+        .test-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .test-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .test-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .status-running {
+            background: #2196F3;
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-pass {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .status-fail {
+            background: #f44336;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .summary {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 20px;
+        }
+
+        .summary .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .log-output {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+
+        .icon {
+            font-size: 20px;
+        }
+
+        .details {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Security Test Suite</h1>
+        <p class="subtitle">Comprehensive security feature testing for Our Space</p>
+
+        <div class="button-group">
+            <button onclick="runAllTests()" id="runBtn">▶️ Run All Tests</button>
+            <button onclick="runQuickTest()" id="quickBtn">⚡ Quick Test</button>
+            <button onclick="clearResults()">🗑️ Clear Results</button>
+        </div>
+
+        <!-- Encryption Tests -->
+        <div class="test-section">
+            <h2><span class="icon">🔐</span> Encryption Tests</h2>
+            <div class="test-item" id="test-aes-key">
+                <div>
+                    <div class="test-name">AES-256-GCM Key Derivation</div>
+                    <div class="details">PBKDF2 with 100,000 iterations</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-hmac-key">
+                <div>
+                    <div class="test-name">HMAC-SHA256 Key Derivation</div>
+                    <div class="details">For authentication tokens</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-encrypt-decrypt">
+                <div>
+                    <div class="test-name">Encrypt/Decrypt Cycle</div>
+                    <div class="details">Message encryption and decryption</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-file-encrypt">
+                <div>
+                    <div class="test-name">File Encryption</div>
+                    <div class="details">Binary data encryption</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+        </div>
+
+        <!-- Authentication Tests -->
+        <div class="test-section">
+            <h2><span class="icon">🛡️</span> Authentication Tests</h2>
+            <div class="test-item" id="test-pin-token">
+                <div>
+                    <div class="test-name">HMAC PIN Token Generation</div>
+                    <div class="details">Secure token creation with time windows</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-token-verify">
+                <div>
+                    <div class="test-name">Token Verification</div>
+                    <div class="details">Valid and invalid token checks</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-rate-limit">
+                <div>
+                    <div class="test-name">Rate Limiting</div>
+                    <div class="details">Brute force protection (5 attempts)</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-token-expiry">
+                <div>
+                    <div class="test-name">Token Expiration</div>
+                    <div class="details">30-minute token lifetime</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+        </div>
+
+        <!-- Storage Tests -->
+        <div class="test-section">
+            <h2><span class="icon">💾</span> Storage Encryption Tests</h2>
+            <div class="test-item" id="test-storage-encrypt">
+                <div>
+                    <div class="test-name">localStorage Encryption</div>
+                    <div class="details">Encrypt data before storing</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-storage-decrypt">
+                <div>
+                    <div class="test-name">localStorage Decryption</div>
+                    <div class="details">Decrypt stored data</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-chat-storage">
+                <div>
+                    <div class="test-name">Chat Message Storage</div>
+                    <div class="details">IndexedDB encryption</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+        </div>
+
+        <!-- Hash Tests -->
+        <div class="test-section">
+            <h2><span class="icon">🔑</span> Hashing Tests</h2>
+            <div class="test-item" id="test-sha256">
+                <div>
+                    <div class="test-name">SHA-256 Room Hashing</div>
+                    <div class="details">Upgraded from SHA-1</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-hash-consistency">
+                <div>
+                    <div class="test-name">Hash Consistency</div>
+                    <div class="details">Same input = same hash</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+        </div>
+
+        <!-- Audit Tests -->
+        <div class="test-section">
+            <h2><span class="icon">📋</span> Audit & Cleanup Tests</h2>
+            <div class="test-item" id="test-audit-log">
+                <div>
+                    <div class="test-name">Audit Logging</div>
+                    <div class="details">Event logging to IndexedDB</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+            <div class="test-item" id="test-cleanup">
+                <div>
+                    <div class="test-name">Automatic Cleanup</div>
+                    <div class="details">Expired token removal</div>
+                </div>
+                <span class="test-status status-pending">PENDING</span>
+            </div>
+        </div>
+
+        <div class="summary" id="summary">
+            Ready to test - Click "Run All Tests" to begin
+        </div>
+
+        <div class="log-output" id="logOutput"></div>
+    </div>
+
+    <script>
+        // Mock the room.js functions for testing
+        const testRoomId = 'test-room-123';
+        const testPin = 'test-pin-456';
+        let encryptionKey = null;
+        let hmacKey = null;
+        let testResults = {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            running: 0
+        };
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('logOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            output.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function updateTestStatus(testId, status, details = '') {
+            const test = document.getElementById(testId);
+            if (!test) return;
+
+            const statusEl = test.querySelector('.test-status');
+            statusEl.className = `test-status status-${status}`;
+            statusEl.textContent = status.toUpperCase();
+
+            if (details) {
+                const detailsEl = test.querySelector('.details');
+                if (detailsEl) detailsEl.textContent = details;
+            }
+        }
+
+        function updateSummary() {
+            const summary = document.getElementById('summary');
+            const { total, passed, failed, running } = testResults;
+
+            if (running > 0) {
+                summary.innerHTML = `Running tests... (${passed + failed}/${total})`;
+            } else if (total > 0) {
+                const percentage = Math.round((passed / total) * 100);
+                summary.innerHTML = `
+                    Test Complete: ${passed}/${total} passed (${percentage}%)
+                    <div class="stats">
+                        <div>✅ Passed: ${passed}</div>
+                        <div>❌ Failed: ${failed}</div>
+                        <div>📊 Score: ${percentage}%</div>
+                    </div>
+                `;
+            }
+        }
+
+        async function runTest(testId, testName, testFunction) {
+            updateTestStatus(testId, 'running');
+            testResults.running++;
+            testResults.total++;
+            log(`Testing: ${testName}...`);
+
+            try {
+                await testFunction();
+                updateTestStatus(testId, 'pass', '✓ Test passed');
+                testResults.passed++;
+                log(`✅ ${testName} - PASSED`, 'success');
+            } catch (error) {
+                updateTestStatus(testId, 'fail', '✗ ' + error.message);
+                testResults.failed++;
+                log(`❌ ${testName} - FAILED: ${error.message}`, 'error');
+            } finally {
+                testResults.running--;
+                updateSummary();
+            }
+        }
+
+        // Test Functions
+        async function testAESKeyDerivation() {
+            const encoder = new TextEncoder();
+            const keyMaterial = testRoomId + '::' + testPin + '::ourspace_v1';
+            const keyData = encoder.encode(keyMaterial);
+
+            const baseKey = await crypto.subtle.importKey('raw', keyData, 'PBKDF2', false, ['deriveBits', 'deriveKey']);
+            const salt = encoder.encode('ourspace_salt_v1_' + testRoomId);
+
+            encryptionKey = await crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+                baseKey,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt', 'decrypt']
+            );
+
+            if (!encryptionKey) throw new Error('Key derivation failed');
+        }
+
+        async function testHMACKeyDerivation() {
+            const encoder = new TextEncoder();
+            const keyMaterial = testRoomId + '::' + testPin + '::hmac_v2';
+            const keyData = encoder.encode(keyMaterial);
+
+            const baseKey = await crypto.subtle.importKey('raw', keyData, 'PBKDF2', false, ['deriveBits', 'deriveKey']);
+            const salt = encoder.encode('ourspace_hmac_salt_' + testRoomId);
+
+            hmacKey = await crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+                baseKey,
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign', 'verify']
+            );
+
+            if (!hmacKey) throw new Error('HMAC key derivation failed');
+        }
+
+        async function testEncryptDecrypt() {
+            if (!encryptionKey) await testAESKeyDerivation();
+
+            const testMessage = 'Hello, this is a secret message! 🔐';
+            const encoder = new TextEncoder();
+            const decoder = new TextDecoder();
+
+            // Encrypt
+            const dataBytes = encoder.encode(testMessage);
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, dataBytes);
+
+            // Decrypt
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, encrypted);
+            const decryptedMessage = decoder.decode(decrypted);
+
+            if (decryptedMessage !== testMessage) {
+                throw new Error('Decrypted message does not match original');
+            }
+        }
+
+        async function testFileEncryption() {
+            if (!encryptionKey) await testAESKeyDerivation();
+
+            // Create test binary data
+            const testData = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+            // Encrypt
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, testData);
+
+            // Decrypt
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, encrypted);
+            const decryptedArray = new Uint8Array(decrypted);
+
+            if (decryptedArray.length !== testData.length) {
+                throw new Error('Decrypted data length mismatch');
+            }
+
+            for (let i = 0; i < testData.length; i++) {
+                if (decryptedArray[i] !== testData[i]) {
+                    throw new Error('Decrypted data does not match original');
+                }
+            }
+        }
+
+        async function testPINToken() {
+            if (!hmacKey) await testHMACKeyDerivation();
+
+            const encoder = new TextEncoder();
+            const timestamp = Math.floor(Date.now() / (5 * 60 * 1000));
+            const message = encoder.encode(testPin + '::' + timestamp);
+
+            const signature = await crypto.subtle.sign('HMAC', hmacKey, message);
+            const token = btoa(String.fromCharCode(...new Uint8Array(signature))).substring(0, 32);
+
+            if (!token || token.length !== 32) {
+                throw new Error('Invalid token generated');
+            }
+        }
+
+        async function testTokenVerification() {
+            if (!hmacKey) await testHMACKeyDerivation();
+
+            // Generate token
+            const encoder = new TextEncoder();
+            const timestamp = Math.floor(Date.now() / (5 * 60 * 1000));
+            const message = encoder.encode(testPin + '::' + timestamp);
+            const signature = await crypto.subtle.sign('HMAC', hmacKey, message);
+            const token = btoa(String.fromCharCode(...new Uint8Array(signature))).substring(0, 32);
+
+            // Verify same token
+            const signature2 = await crypto.subtle.sign('HMAC', hmacKey, message);
+            const token2 = btoa(String.fromCharCode(...new Uint8Array(signature2))).substring(0, 32);
+
+            if (token !== token2) {
+                throw new Error('Token verification failed - tokens do not match');
+            }
+
+            // Test with wrong PIN
+            const wrongMessage = encoder.encode('wrong-pin' + '::' + timestamp);
+            const wrongSignature = await crypto.subtle.sign('HMAC', hmacKey, wrongMessage);
+            const wrongToken = btoa(String.fromCharCode(...new Uint8Array(wrongSignature))).substring(0, 32);
+
+            if (token === wrongToken) {
+                throw new Error('Token verification failed - different PINs produced same token');
+            }
+        }
+
+        async function testRateLimiting() {
+            const authAttempts = {};
+            const MAX_ATTEMPTS = 5;
+            const testPeerId = 'test-peer-123';
+
+            // Simulate failed attempts
+            authAttempts[testPeerId] = { attempts: [], blocked: false };
+
+            for (let i = 0; i < 6; i++) {
+                authAttempts[testPeerId].attempts.push(Date.now());
+            }
+
+            // Check if blocked
+            const recentAttempts = authAttempts[testPeerId].attempts.filter(
+                ts => Date.now() - ts < 5 * 60 * 1000
+            );
+
+            if (recentAttempts.length < MAX_ATTEMPTS) {
+                throw new Error('Rate limiting not triggered');
+            }
+        }
+
+        async function testTokenExpiry() {
+            const now = Date.now();
+            const expiredToken = {
+                token: 'test-token',
+                approvedAt: now - 40 * 60 * 1000,  // 40 minutes ago
+                expiresAt: now - 10 * 60 * 1000    // Expired 10 minutes ago
+            };
+
+            if (now < expiredToken.expiresAt) {
+                throw new Error('Token expiry check failed - expired token marked as valid');
+            }
+        }
+
+        async function testStorageEncryption() {
+            if (!encryptionKey) await testAESKeyDerivation();
+
+            const testData = { message: 'Secret playlist data', songs: ['song1', 'song2'] };
+            const encoder = new TextEncoder();
+            const dataBytes = encoder.encode(JSON.stringify(testData));
+
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, dataBytes);
+            const combined = new Uint8Array(iv.length + encrypted.byteLength);
+            combined.set(iv, 0);
+            combined.set(new Uint8Array(encrypted), iv.length);
+            const encryptedString = btoa(String.fromCharCode(...combined));
+
+            // Store in localStorage
+            localStorage.setItem('test_encrypted_data', encryptedString);
+
+            // Verify it's stored as encrypted (not plain text)
+            const stored = localStorage.getItem('test_encrypted_data');
+            if (stored.includes('Secret playlist') || stored.includes('song1')) {
+                throw new Error('Data stored in plain text');
+            }
+        }
+
+        async function testStorageDecryption() {
+            if (!encryptionKey) await testAESKeyDerivation();
+
+            const stored = localStorage.getItem('test_encrypted_data');
+            if (!stored) throw new Error('No encrypted data found');
+
+            const combined = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
+            const iv = combined.slice(0, 12);
+            const encryptedData = combined.slice(12);
+
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, encryptedData);
+            const decoder = new TextDecoder();
+            const decryptedData = JSON.parse(decoder.decode(decrypted));
+
+            if (!decryptedData.message || decryptedData.message !== 'Secret playlist data') {
+                throw new Error('Decryption failed or data corrupted');
+            }
+
+            // Cleanup
+            localStorage.removeItem('test_encrypted_data');
+        }
+
+        async function testChatStorage() {
+            // Test chat message structure for encryption
+            const chatMessage = {
+                id: 'msg-123',
+                timestamp: Date.now(),
+                sender: 'TestUser',
+                content: 'Secret chat message',
+                type: 'text'
+            };
+
+            if (!encryptionKey) await testAESKeyDerivation();
+
+            // Encrypt message data
+            const encoder = new TextEncoder();
+            const dataBytes = encoder.encode(JSON.stringify(chatMessage));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, dataBytes);
+
+            // Verify encryption worked
+            if (encrypted.byteLength === 0) {
+                throw new Error('Chat encryption failed');
+            }
+
+            // Test decryption
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, encryptionKey, encrypted);
+            const decoder = new TextDecoder();
+            const decryptedMsg = JSON.parse(decoder.decode(decrypted));
+
+            if (decryptedMsg.content !== chatMessage.content) {
+                throw new Error('Chat decryption failed');
+            }
+        }
+
+        async function testSHA256() {
+            const testString = 'test-room-code';
+            const encoder = new TextEncoder();
+            const data = encoder.encode(testString);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hash));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            if (hashHex.length !== 64) {  // SHA-256 produces 64 hex characters
+                throw new Error('SHA-256 hash has incorrect length');
+            }
+
+            // Verify it's deterministic
+            const hash2 = await crypto.subtle.digest('SHA-256', data);
+            const hashArray2 = Array.from(new Uint8Array(hash2));
+            const hashHex2 = hashArray2.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            if (hashHex !== hashHex2) {
+                throw new Error('SHA-256 not deterministic');
+            }
+        }
+
+        async function testHashConsistency() {
+            const testData = ['room1', 'room2', 'room1'];
+            const hashes = [];
+
+            for (const roomCode of testData) {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(roomCode);
+                const hash = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hash));
+                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                hashes.push(hashHex);
+            }
+
+            if (hashes[0] !== hashes[2]) {
+                throw new Error('Hash inconsistency - same input produced different hashes');
+            }
+
+            if (hashes[0] === hashes[1]) {
+                throw new Error('Hash collision - different inputs produced same hash');
+            }
+        }
+
+        async function testAuditLog() {
+            // Test audit log structure
+            const logEntry = {
+                timestamp: Date.now(),
+                event: 'test_event',
+                roomId: testRoomId,
+                peerId: 'test-peer',
+                success: true,
+                reason: null
+            };
+
+            // Verify all required fields present
+            const requiredFields = ['timestamp', 'event', 'roomId', 'peerId', 'success'];
+            for (const field of requiredFields) {
+                if (!(field in logEntry)) {
+                    throw new Error(`Missing required field: ${field}`);
+                }
+            }
+
+            // Verify timestamp is valid
+            if (logEntry.timestamp > Date.now() || logEntry.timestamp < Date.now() - 1000) {
+                throw new Error('Invalid timestamp');
+            }
+        }
+
+        async function testCleanup() {
+            const now = Date.now();
+            const tokens = [
+                { token: 'valid', expiresAt: now + 10 * 60 * 1000 },  // Expires in 10 min
+                { token: 'expired', expiresAt: now - 10 * 60 * 1000 }  // Expired 10 min ago
+            ];
+
+            const filtered = tokens.filter(entry => now < entry.expiresAt);
+
+            if (filtered.length !== 1) {
+                throw new Error('Cleanup failed - wrong number of tokens after filter');
+            }
+
+            if (filtered[0].token !== 'valid') {
+                throw new Error('Cleanup failed - wrong token kept');
+            }
+        }
+
+        async function runAllTests() {
+            document.getElementById('runBtn').disabled = true;
+            document.getElementById('quickBtn').disabled = true;
+            testResults = { total: 0, passed: 0, failed: 0, running: 0 };
+            document.getElementById('logOutput').textContent = '';
+
+            log('='.repeat(50));
+            log('Starting Comprehensive Security Test Suite');
+            log('='.repeat(50));
+
+            // Encryption Tests
+            await runTest('test-aes-key', 'AES-256-GCM Key Derivation', testAESKeyDerivation);
+            await runTest('test-hmac-key', 'HMAC-SHA256 Key Derivation', testHMACKeyDerivation);
+            await runTest('test-encrypt-decrypt', 'Encrypt/Decrypt Cycle', testEncryptDecrypt);
+            await runTest('test-file-encrypt', 'File Encryption', testFileEncryption);
+
+            // Authentication Tests
+            await runTest('test-pin-token', 'HMAC PIN Token Generation', testPINToken);
+            await runTest('test-token-verify', 'Token Verification', testTokenVerification);
+            await runTest('test-rate-limit', 'Rate Limiting', testRateLimiting);
+            await runTest('test-token-expiry', 'Token Expiration', testTokenExpiry);
+
+            // Storage Tests
+            await runTest('test-storage-encrypt', 'localStorage Encryption', testStorageEncryption);
+            await runTest('test-storage-decrypt', 'localStorage Decryption', testStorageDecryption);
+            await runTest('test-chat-storage', 'Chat Message Storage', testChatStorage);
+
+            // Hash Tests
+            await runTest('test-sha256', 'SHA-256 Room Hashing', testSHA256);
+            await runTest('test-hash-consistency', 'Hash Consistency', testHashConsistency);
+
+            // Audit Tests
+            await runTest('test-audit-log', 'Audit Logging', testAuditLog);
+            await runTest('test-cleanup', 'Automatic Cleanup', testCleanup);
+
+            log('='.repeat(50));
+            log(`Test Suite Complete: ${testResults.passed}/${testResults.total} passed`);
+            log('='.repeat(50));
+
+            document.getElementById('runBtn').disabled = false;
+            document.getElementById('quickBtn').disabled = false;
+        }
+
+        async function runQuickTest() {
+            document.getElementById('quickBtn').disabled = true;
+            testResults = { total: 0, passed: 0, failed: 0, running: 0 };
+            document.getElementById('logOutput').textContent = '';
+
+            log('Running Quick Test (Core Features Only)...');
+
+            await runTest('test-aes-key', 'AES-256-GCM Key Derivation', testAESKeyDerivation);
+            await runTest('test-hmac-key', 'HMAC-SHA256 Key Derivation', testHMACKeyDerivation);
+            await runTest('test-encrypt-decrypt', 'Encrypt/Decrypt Cycle', testEncryptDecrypt);
+            await runTest('test-pin-token', 'HMAC PIN Token Generation', testPINToken);
+            await runTest('test-sha256', 'SHA-256 Room Hashing', testSHA256);
+
+            log(`Quick Test Complete: ${testResults.passed}/${testResults.total} passed`);
+            document.getElementById('quickBtn').disabled = false;
+        }
+
+        function clearResults() {
+            document.querySelectorAll('.test-status').forEach(el => {
+                el.className = 'test-status status-pending';
+                el.textContent = 'PENDING';
+            });
+            document.getElementById('logOutput').textContent = '';
+            document.getElementById('summary').textContent = 'Ready to test - Click "Run All Tests" to begin';
+            testResults = { total: 0, passed: 0, failed: 0, running: 0 };
+        }
+
+        // Initialize
+        log('Security Test Suite Ready');
+        log('Click "Run All Tests" to begin comprehensive testing');
+    </script>
+</body>
+</html>

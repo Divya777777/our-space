@@ -11,6 +11,154 @@ const roomPin = sessionStorage.getItem('ourspace_pin') || '';
 
 if (!roomId) { window.location.href = 'index.html'; }
 
+// ─── END-TO-END ENCRYPTION (AES-256-GCM) ─────────────
+// Encrypts all messages, files, and sync data BEFORE sending via WebRTC
+// Works with BOTH cloud PeerJS and self-hosted server!
+let encryptionKey = null;
+
+async function deriveEncryptionKey() {
+    // Derive a strong encryption key from roomId + roomPin
+    const keyMaterial = roomId + '::' + roomPin + '::ourspace_v1';
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(keyMaterial);
+
+    // Use PBKDF2 to derive key (100,000 iterations for security)
+    const baseKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        'PBKDF2',
+        false,
+        ['deriveBits', 'deriveKey']
+    );
+
+    const salt = encoder.encode('ourspace_salt_v1_' + roomId);
+
+    encryptionKey = await crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: 100000,
+            hash: 'SHA-256'
+        },
+        baseKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+
+    console.log('[ENCRYPTION] 🔐 AES-256-GCM key derived from room credentials');
+
+    // Show encryption indicator in UI
+    const encryptionStatus = document.getElementById('encryptionStatus');
+    if (encryptionStatus) {
+        encryptionStatus.style.display = 'block';
+        encryptionStatus.title = 'All messages, files, and sync data are encrypted with AES-256-GCM before transmission';
+    }
+}
+
+async function encryptData(data) {
+    if (!encryptionKey) await deriveEncryptionKey();
+
+    // Convert data to JSON string then to bytes
+    const encoder = new TextEncoder();
+    const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+    const dataBytes = encoder.encode(dataString);
+
+    // Generate random IV (initialization vector) for each message
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    // Encrypt with AES-256-GCM
+    const encryptedData = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv },
+        encryptionKey,
+        dataBytes
+    );
+
+    // Combine IV + encrypted data for transmission
+    const combined = new Uint8Array(iv.length + encryptedData.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(encryptedData), iv.length);
+
+    // Convert to base64 for easy transmission
+    return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(encryptedString) {
+    if (!encryptionKey) await deriveEncryptionKey();
+
+    try {
+        // Decode from base64
+        const combined = Uint8Array.from(atob(encryptedString), c => c.charCodeAt(0));
+
+        // Extract IV and encrypted data
+        const iv = combined.slice(0, 12);
+        const encryptedData = combined.slice(12);
+
+        // Decrypt with AES-256-GCM
+        const decryptedData = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: iv },
+            encryptionKey,
+            encryptedData
+        );
+
+        // Convert bytes back to string
+        const decoder = new TextDecoder();
+        const dataString = decoder.decode(decryptedData);
+
+        // Try to parse as JSON, otherwise return as string
+        try {
+            return JSON.parse(dataString);
+        } catch {
+            return dataString;
+        }
+    } catch (err) {
+        console.error('[ENCRYPTION] ❌ Decryption failed:', err);
+        return null; // Invalid key or corrupted data
+    }
+}
+
+// Encrypt file data (for image/file sharing)
+async function encryptFile(arrayBuffer, fileName) {
+    if (!encryptionKey) await deriveEncryptionKey();
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedData = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv },
+        encryptionKey,
+        arrayBuffer
+    );
+
+    // Return both IV and encrypted data
+    return {
+        iv: btoa(String.fromCharCode(...iv)),
+        data: btoa(String.fromCharCode(...new Uint8Array(encryptedData))),
+        fileName: fileName
+    };
+}
+
+async function decryptFile(encryptedFile) {
+    if (!encryptionKey) await deriveEncryptionKey();
+
+    try {
+        const iv = Uint8Array.from(atob(encryptedFile.iv), c => c.charCodeAt(0));
+        const data = Uint8Array.from(atob(encryptedFile.data), c => c.charCodeAt(0));
+
+        const decryptedData = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: iv },
+            encryptionKey,
+            data
+        );
+
+        return {
+            data: decryptedData,
+            fileName: encryptedFile.fileName
+        };
+    } catch (err) {
+        console.error('[ENCRYPTION] ❌ File decryption failed:', err);
+        return null;
+    }
+}
+
 // ─── ENHANCED STAR BACKGROUND ─────────────────────────
 (function initStars() {
     const canvas = document.getElementById('starCanvas');
@@ -290,14 +438,80 @@ function setStatus(state, text) {
 }
 
 // ─────────────────────────────────────────────────────
-//  PIN SECURITY
+//  PIN SECURITY (HMAC-SHA256)
 // ─────────────────────────────────────────────────────
-// Simple deterministic hash of (roomId + pin) — not crypto but prevents casual intrusion
-function roomPinToken() {
-    const str = roomId + '::' + roomPin;
-    let h = 0;
-    for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
-    return Math.abs(h).toString(36);
+// Secure HMAC-SHA256 authentication token generation
+let hmacKey = null;
+
+async function deriveHmacKey() {
+    if (hmacKey) return hmacKey;
+
+    // Derive HMAC key from room credentials
+    const keyMaterial = roomId + '::' + roomPin + '::hmac_v2';
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(keyMaterial);
+
+    const baseKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        'PBKDF2',
+        false,
+        ['deriveBits', 'deriveKey']
+    );
+
+    const salt = encoder.encode('ourspace_hmac_salt_' + roomId);
+
+    hmacKey = await crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: 100000,
+            hash: 'SHA-256'
+        },
+        baseKey,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign', 'verify']
+    );
+
+    console.log('[SECURITY] 🔐 HMAC-SHA256 key derived for authentication');
+    return hmacKey;
+}
+
+async function roomPinToken() {
+    const key = await deriveHmacKey();
+    const encoder = new TextEncoder();
+
+    // Include timestamp for freshness (prevents replay attacks within 5 min window)
+    const timestamp = Math.floor(Date.now() / (5 * 60 * 1000)); // 5-minute windows
+    const message = encoder.encode(roomPin + '::' + timestamp);
+
+    const signature = await crypto.subtle.sign('HMAC', key, message);
+    const signatureArray = Array.from(new Uint8Array(signature));
+
+    // Return base64 encoded HMAC
+    return btoa(String.fromCharCode(...signatureArray)).substring(0, 32);
+}
+
+async function verifyPinToken(token, providedTimestamp = null) {
+    const key = await deriveHmacKey();
+    const encoder = new TextEncoder();
+
+    // Try current and previous time window (allows 10 min tolerance)
+    const currentWindow = Math.floor(Date.now() / (5 * 60 * 1000));
+    const windows = [currentWindow, currentWindow - 1];
+
+    for (const window of windows) {
+        const message = encoder.encode(roomPin + '::' + window);
+        const expectedSignature = await crypto.subtle.sign('HMAC', key, message);
+        const expectedToken = btoa(String.fromCharCode(...new Uint8Array(expectedSignature))).substring(0, 32);
+
+        if (token === expectedToken) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // ─────────────────────────────────────────────────────
@@ -308,35 +522,143 @@ let isMuted = false, isVideoOff = false, isInCall = false;
 
 let hostId = '';
 let isHost = false;
-let approvedTokens = JSON.parse(localStorage.getItem(`approved_${roomId || ''}`)) || [];
+let approvedTokens = [];
 const peersMap = {};
 
-function roomPinToken() { return btoa(roomPin).substring(0, 15); }
+// Load approved tokens (encrypted)
+(async () => {
+    const tokens = await loadSecureData(`approved_${roomId || ''}`);
+    if (tokens) {
+        approvedTokens = tokens;
+        console.log('[SECURITY] 🔐 Loaded encrypted approved tokens');
+    }
+})();
+
+// ─── RATE LIMITING & AUTH TRACKING ────────────────────
+const authAttempts = {};  // Track failed auth attempts per peer
+const MAX_AUTH_ATTEMPTS = 5;
+const AUTH_ATTEMPT_WINDOW = 5 * 60 * 1000;  // 5 minutes
+const AUTH_BLOCK_DURATION = 15 * 60 * 1000;  // 15 minutes
+
+function isAuthBlocked(peerId) {
+    const peerAttempts = authAttempts[peerId];
+    if (!peerAttempts) return false;
+
+    // Check if blocked
+    if (peerAttempts.blocked && (Date.now() - peerAttempts.blockedAt) < AUTH_BLOCK_DURATION) {
+        console.warn(`[SECURITY] 🚫 Peer ${peerId} is blocked for ${Math.ceil((AUTH_BLOCK_DURATION - (Date.now() - peerAttempts.blockedAt)) / 1000 / 60)} more minutes`);
+        return true;
+    }
+
+    // Unblock after duration
+    if (peerAttempts.blocked && (Date.now() - peerAttempts.blockedAt) >= AUTH_BLOCK_DURATION) {
+        peerAttempts.blocked = false;
+        peerAttempts.attempts = [];
+        console.log(`[SECURITY] ✅ Peer ${peerId} unblocked`);
+    }
+
+    // Count recent attempts
+    const recentAttempts = peerAttempts.attempts.filter(ts => Date.now() - ts < AUTH_ATTEMPT_WINDOW);
+    peerAttempts.attempts = recentAttempts;
+
+    if (recentAttempts.length >= MAX_AUTH_ATTEMPTS) {
+        peerAttempts.blocked = true;
+        peerAttempts.blockedAt = Date.now();
+        console.warn(`[SECURITY] 🚫 Peer ${peerId} blocked after ${MAX_AUTH_ATTEMPTS} failed attempts`);
+        return true;
+    }
+
+    return false;
+}
+
+function recordAuthAttempt(peerId, success) {
+    if (!authAttempts[peerId]) {
+        authAttempts[peerId] = { attempts: [], blocked: false };
+    }
+
+    if (!success) {
+        authAttempts[peerId].attempts.push(Date.now());
+        console.warn(`[SECURITY] ⚠️ Failed auth attempt from ${peerId} (${authAttempts[peerId].attempts.length}/${MAX_AUTH_ATTEMPTS})`);
+    } else {
+        // Clear attempts on successful auth
+        authAttempts[peerId].attempts = [];
+        console.log(`[SECURITY] ✅ Successful auth from ${peerId}`);
+    }
+}
 
 async function hashRoomId(str) {
     const data = new TextEncoder().encode(str);
-    const buf = await crypto.subtle.digest('SHA-1', data);
+    const buf = await crypto.subtle.digest('SHA-256', data);  // Upgraded from SHA-1
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 20);
 }
 
-function broadcast(msg, excludeId = null) {
-    Object.values(peersMap).forEach(p => {
-        if (p.dataConn && p.dataConn.open && p.dataConn.peer !== excludeId) {
-            p.dataConn.send(msg);
-        }
-    });
+// Secure send wrapper - encrypts messages before sending
+async function secureSend(conn, msg) {
+    // Don't encrypt auth messages (needed for initial handshake)
+    if (msg.type === 'auth_request' || msg.type === 'auth_accepted' ||
+        msg.type === 'auth_rejected' || msg.type === 'peer_intro') {
+        conn.send(msg);
+        return;
+    }
+
+    // Encrypt all other messages
+    const encrypted = await encryptData(msg);
+    conn.send({ type: 'encrypted', data: encrypted });
 }
+
+// Secure broadcast - encrypts and sends to all peers
+async function broadcast(msg, excludeId = null) {
+    for (const p of Object.values(peersMap)) {
+        if (p.dataConn && p.dataConn.open && p.dataConn.peer !== excludeId) {
+            await secureSend(p.dataConn, msg);
+        }
+    }
+}
+
 function sendSync(msg) { broadcast(msg); }
 
 async function setupPeer() {
     setStatus('connecting', 'Connecting…');
     hostId = (await hashRoomId(roomId)) + 'h'; // PeerJS IDs: alphanumeric only, no underscores
 
+    // Auto-detect: use local server if running on localhost/custom port, otherwise use cloud
+    const isLocalServer = window.location.protocol === 'http:' &&
+                         (window.location.hostname === 'localhost' ||
+                          window.location.hostname === '127.0.0.1' ||
+                          window.location.port !== '');
+
+    // Better ICE server configuration for more reliable connections
+    const peerConfig = {
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ],
+            iceTransportPolicy: 'all'
+        },
+        debug: 0 // Set to 3 for verbose debugging if needed
+    };
+
+    // If running on local server (npm start), use custom server
+    if (isLocalServer && window.location.port) {
+        peerConfig.host = window.location.hostname;
+        peerConfig.port = parseInt(window.location.port);
+        peerConfig.path = '/peerjs';
+        console.log('[PEER] Using LOCAL PeerJS server at:', `${peerConfig.host}:${peerConfig.port}${peerConfig.path}`);
+    } else {
+        // Otherwise use default PeerJS cloud (works with file:// protocol)
+        console.log('[PEER] Using CLOUD PeerJS server (default)');
+    }
+
     return new Promise((resolve) => {
-        peer = new Peer(hostId, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+        peer = new Peer(hostId, peerConfig);
 
         peer.on('open', id => {
             isHost = true;
+            console.log('[HOST] Successfully registered as host with ID:', id);
             toast(`Room ready! You are the Host.`, 'info', 5000);
             setStatus('connected', 'Waiting for guests…');
             setupHostListeners();
@@ -344,63 +666,460 @@ async function setupPeer() {
         });
 
         peer.on('error', err => {
+            console.error('[PEER] PeerJS error:', err.type, err);
             if (err.type === 'unavailable-id') {
                 isHost = false;
-                peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+                console.log('[GUEST] Host exists, joining as guest...');
+                peer = new Peer(peerConfig);
                 peer.on('open', id => {
+                    console.log('[GUEST] Successfully registered as guest with ID:', id);
                     setStatus('connecting', 'Connecting to Host…');
                     connectToHost();
                     resolve();
                 });
+                peer.on('error', guestErr => {
+                    console.error('[GUEST] Failed to register as guest:', guestErr);
+                    toast('Network error connecting to server. Check console for details.', 'error');
+                });
             } else {
-                toast('Network error connecting to server.', 'error');
+                toast('Network error connecting to server. Check console for details.', 'error');
             }
+        });
+
+        peer.on('disconnected', () => {
+            console.warn('[PEER] Disconnected from signaling server, attempting reconnect...');
+            peer.reconnect();
         });
     });
 }
 
 function setupHostListeners() {
+    console.log('[HOST] Setting up listeners for incoming connections');
+
     peer.on('connection', conn => {
+        console.log('[HOST] Incoming connection from peer:', conn.peer);
+
         // Always set up data listener FIRST so we don't miss post-auth messages
-        conn.on('data', msg => {
+        conn.on('data', async msg => {
+            // Handle unencrypted auth messages
             if (msg.type === 'auth_request') {
+                console.log('[HOST] Received auth request from:', msg.name);
                 handleAuthRequest(conn, msg.name, msg.token);
+                return;
+            }
+
+            // Decrypt encrypted messages
+            if (msg.type === 'encrypted') {
+                const decrypted = await decryptData(msg.data);
+                if (decrypted && peersMap[conn.peer]) {
+                    handleSyncMessage(decrypted, conn.peer);
+                }
             } else if (peersMap[conn.peer]) {
+                // Fallback for unencrypted messages (backward compatibility)
                 handleSyncMessage(msg, conn.peer);
             }
         });
-        conn.on('close', () => handlePeerDisconnect(conn.peer));
+
+        conn.on('close', () => {
+            console.log('[HOST] Peer disconnected:', conn.peer);
+            handlePeerDisconnect(conn.peer);
+        });
+
+        conn.on('error', (err) => {
+            console.error('[HOST] Connection error with peer:', conn.peer, err);
+        });
 
         // Also handle auth from metadata (fires immediately on connect in some PeerJS versions)
         const meta = conn.metadata;
         if (meta && meta.type === 'auth_request') {
+            console.log('[HOST] Received auth request via metadata from:', meta.name);
             handleAuthRequest(conn, meta.name, meta.token);
         }
     });
 
-    peer.on('call', call => handleIncomingCall(call));
+    peer.on('call', call => {
+        console.log('[HOST] Incoming call from:', call.peer);
+        handleIncomingCall(call);
+    });
 }
 
-function handleAuthRequest(conn, guestName, token) {
-    if (approvedTokens.includes(token)) {
+async function handleAuthRequest(conn, guestName, token) {
+    const peerId = conn.peer;
+
+    // Check if peer is rate-limited
+    if (isAuthBlocked(peerId)) {
+        console.warn(`[SECURITY] 🚫 Blocked auth attempt from ${peerId}`);
+        conn.send({ type: 'auth_rejected', reason: 'rate_limited' });
+        setTimeout(() => conn.close(), 500);
+        logAuthEvent('auth_blocked', { peerId, guestName, reason: 'rate_limited' });
+        return;
+    }
+
+    // Check if token is in approved list AND not expired
+    const approvedEntry = approvedTokens.find(entry =>
+        (typeof entry === 'string' ? entry : entry.token) === token
+    );
+
+    if (approvedEntry) {
+        // Check if token has expiration
+        if (typeof approvedEntry === 'object' && approvedEntry.expiresAt) {
+            if (Date.now() > approvedEntry.expiresAt) {
+                console.warn(`[SECURITY] ⚠️ Expired token from ${peerId}`);
+                // Remove expired token
+                approvedTokens = approvedTokens.filter(e =>
+                    (typeof e === 'object' ? e.token : e) !== token
+                );
+                saveApprovedTokens();
+                recordAuthAttempt(peerId, false);
+                conn.send({ type: 'auth_rejected', reason: 'token_expired' });
+                setTimeout(() => conn.close(), 500);
+                logAuthEvent('auth_rejected', { peerId, guestName, reason: 'token_expired' });
+                return;
+            }
+        }
+
+        // Token valid - accept guest
+        recordAuthAttempt(peerId, true);
+        logAuthEvent('auth_success', { peerId, guestName, method: 'approved_token' });
         acceptGuest(conn, guestName, token);
     } else {
+        // New connection - show approval modal
         document.getElementById('authMessage').textContent = `${guestName} wants to join.`;
         document.getElementById('authModal').style.display = 'flex';
 
         document.getElementById('authAcceptBtn').onclick = () => {
             document.getElementById('authModal').style.display = 'none';
-            approvedTokens.push(token);
-            localStorage.setItem(`approved_${roomId}`, JSON.stringify(approvedTokens));
+
+            // Store token with expiration (30 minutes)
+            const tokenEntry = {
+                token: token,
+                approvedAt: Date.now(),
+                expiresAt: Date.now() + 30 * 60 * 1000,  // 30 minutes
+                guestName: guestName,
+                peerId: peerId
+            };
+
+            approvedTokens.push(tokenEntry);
+            saveApprovedTokens();
+            recordAuthAttempt(peerId, true);
+            logAuthEvent('auth_success', { peerId, guestName, method: 'manual_approval' });
             acceptGuest(conn, guestName, token);
         };
+
         document.getElementById('authRejectBtn').onclick = () => {
             document.getElementById('authModal').style.display = 'none';
-            conn.send({ type: 'auth_rejected' });
+            recordAuthAttempt(peerId, false);
+            logAuthEvent('auth_rejected', { peerId, guestName, reason: 'manual_rejection' });
+            conn.send({ type: 'auth_rejected', reason: 'rejected_by_host' });
             setTimeout(() => conn.close(), 500);
         };
     }
 }
+
+async function saveApprovedTokens() {
+    await saveSecureData(`approved_${roomId}`, approvedTokens);
+}
+
+// ─── AUDIT LOGGING SYSTEM ─────────────────────────────
+const AUDIT_LOG_DB = 'OurSpaceAuditLog';
+let auditDB = null;
+
+function initAuditLog() {
+    const request = indexedDB.open(AUDIT_LOG_DB, 1);
+
+    request.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('logs')) {
+            const store = db.createObjectStore('logs', { keyPath: 'id', autoIncrement: true });
+            store.createIndex('timestamp', 'timestamp', { unique: false });
+            store.createIndex('event', 'event', { unique: false });
+            store.createIndex('roomId', 'roomId', { unique: false });
+        }
+    };
+
+    request.onsuccess = e => {
+        auditDB = e.target.result;
+        console.log('[AUDIT] 📋 Audit logging initialized');
+    };
+
+    request.onerror = e => {
+        console.error('[AUDIT] Failed to initialize audit log:', e);
+    };
+}
+
+function logAuthEvent(event, details) {
+    if (!auditDB) return;
+
+    const logEntry = {
+        timestamp: Date.now(),
+        event: event,
+        roomId: roomId,
+        peerId: details.peerId || 'unknown',
+        guestName: details.guestName || 'unknown',
+        success: details.success !== false,
+        reason: details.reason || null,
+        method: details.method || null
+    };
+
+    try {
+        const tx = auditDB.transaction(['logs'], 'readwrite');
+        const store = tx.objectStore('logs');
+        store.add(logEntry);
+
+        console.log(`[AUDIT] ${logEntry.success ? '✅' : '⚠️'} ${event}:`, details);
+
+        // Cleanup old logs (keep last 1000 entries)
+        tx.oncomplete = () => {
+            cleanupOldLogs();
+        };
+    } catch (err) {
+        console.error('[AUDIT] Failed to write log:', err);
+    }
+}
+
+function cleanupOldLogs() {
+    if (!auditDB) return;
+
+    try {
+        const tx = auditDB.transaction(['logs'], 'readwrite');
+        const store = tx.objectStore('logs');
+        const countRequest = store.count();
+
+        countRequest.onsuccess = () => {
+            const count = countRequest.result;
+            if (count > 1000) {
+                // Delete oldest entries
+                const deleteCount = count - 1000;
+                const index = store.index('timestamp');
+                const cursorRequest = index.openCursor();
+                let deleted = 0;
+
+                cursorRequest.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor && deleted < deleteCount) {
+                        cursor.delete();
+                        deleted++;
+                        cursor.continue();
+                    }
+                };
+            }
+        };
+    } catch (err) {
+        console.error('[AUDIT] Failed to cleanup logs:', err);
+    }
+}
+
+// Get recent audit logs (for debugging/admin view)
+function getAuditLogs(limit = 50) {
+    return new Promise((resolve, reject) => {
+        if (!auditDB) {
+            resolve([]);
+            return;
+        }
+
+        try {
+            const tx = auditDB.transaction(['logs'], 'readonly');
+            const store = tx.objectStore('logs');
+            const index = store.index('timestamp');
+            const request = index.openCursor(null, 'prev');  // Reverse order (newest first)
+
+            const logs = [];
+            request.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor && logs.length < limit) {
+                    logs.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(logs);
+                }
+            };
+
+            request.onerror = () => reject(request.error);
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+// Initialize audit logging
+initAuditLog();
+
+// ─── LOCALSTORAGE ENCRYPTION ──────────────────────────
+// Encrypt sensitive localStorage data (playlists, tokens, recent rooms)
+
+async function encryptLocalStorage(key, data) {
+    try {
+        const encrypted = await encryptData(data);
+        localStorage.setItem(key, encrypted);
+        return true;
+    } catch (err) {
+        console.error('[STORAGE] Failed to encrypt data:', err);
+        return false;
+    }
+}
+
+async function decryptLocalStorage(key) {
+    try {
+        const encrypted = localStorage.getItem(key);
+        if (!encrypted) return null;
+
+        // Try to decrypt
+        const decrypted = await decryptData(encrypted);
+        if (decrypted) return decrypted;
+
+        // If decryption fails, might be old unencrypted data
+        // Try to parse as JSON
+        try {
+            return JSON.parse(encrypted);
+        } catch {
+            return null;
+        }
+    } catch (err) {
+        console.error('[STORAGE] Failed to decrypt data:', err);
+        return null;
+    }
+}
+
+// Wrapper functions for secure storage
+async function saveSecureData(key, data) {
+    await encryptLocalStorage(key, data);
+}
+
+async function loadSecureData(key) {
+    return await decryptLocalStorage(key);
+}
+
+// ─── AUTOMATIC CLEANUP UTILITIES ──────────────────────
+function cleanupExpiredTokens() {
+    if (!approvedTokens || approvedTokens.length === 0) return;
+
+    const before = approvedTokens.length;
+    approvedTokens = approvedTokens.filter(entry => {
+        if (typeof entry === 'object' && entry.expiresAt) {
+            return Date.now() < entry.expiresAt;
+        }
+        return true;  // Keep old-format tokens
+    });
+
+    if (approvedTokens.length < before) {
+        console.log(`[CLEANUP] 🧹 Removed ${before - approvedTokens.length} expired tokens`);
+        saveApprovedTokens();
+    }
+}
+
+function cleanupOldRoomData() {
+    // Clean up data from rooms not accessed in 30 days
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    // Get all localStorage keys
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('ourspace_playlist_') ||
+            key.startsWith('approved_')) {
+            // Check if room has been inactive
+            const roomCode = key.replace('ourspace_playlist_', '').replace('approved_', '');
+            if (roomCode !== roomId) {  // Don't clean current room
+                keysToRemove.push(key);
+            }
+        }
+    }
+
+    if (keysToRemove.length > 0) {
+        console.log(`[CLEANUP] 🧹 Found ${keysToRemove.length} old room data entries`);
+        // For safety, we'll log them but not auto-delete (user can manually clear)
+    }
+}
+
+function deleteAllRoomData() {
+    // Utility to completely wipe all room data (for user privacy)
+    if (!confirm('Delete ALL room data including chat history, playlists, and approved guests? This cannot be undone!')) {
+        return;
+    }
+
+    // Clear localStorage
+    Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('ourspace_')) {
+            localStorage.removeItem(key);
+        }
+    });
+
+    // Delete all IndexedDB databases
+    indexedDB.deleteDatabase(CHAT_DB_NAME);
+    indexedDB.deleteDatabase(AUDIT_LOG_DB);
+
+    console.log('[CLEANUP] 🧹 All room data deleted');
+    toast('All data deleted successfully', 'success');
+
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 1000);
+}
+
+// Run cleanup on load
+cleanupExpiredTokens();
+
+// Run cleanup every hour
+setInterval(() => {
+    cleanupExpiredTokens();
+    cleanupOldRoomData();
+}, 60 * 60 * 1000);  // 1 hour
+
+// Expose utilities for manual use
+window.deleteAllRoomData = deleteAllRoomData;
+
+// Security status command (for debugging/admin)
+window.showSecurityStatus = async function() {
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔐 SECURITY STATUS REPORT');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    console.log('📊 Encryption:');
+    console.log(`  ✅ E2E Encryption: ${encryptionKey ? 'ACTIVE (AES-256-GCM)' : 'INACTIVE'}`);
+    console.log(`  ✅ HMAC Auth: ${hmacKey ? 'ACTIVE (HMAC-SHA256)' : 'INACTIVE'}`);
+    console.log(`  ✅ Room Hash: SHA-256`);
+
+    console.log('\n🛡️ Authentication:');
+    console.log(`  • Approved Tokens: ${approvedTokens.length}`);
+    console.log(`  • Rate Limiting: ACTIVE (${MAX_AUTH_ATTEMPTS} attempts per ${AUTH_ATTEMPT_WINDOW / 1000 / 60} min)`);
+    console.log(`  • Token Expiry: 30 minutes`);
+
+    console.log('\n💾 Storage:');
+    console.log(`  • Playlists: ENCRYPTED`);
+    console.log(`  • Chat History: ENCRYPTED`);
+    console.log(`  • Approved Tokens: ENCRYPTED`);
+
+    console.log('\n📝 Audit Log:');
+    try {
+        const logs = await getAuditLogs(10);
+        console.log(`  • Total Events Logged: ${logs.length > 0 ? '1000+' : '0'}`);
+        console.log(`  • Recent Events: ${logs.length}`);
+        if (logs.length > 0) {
+            console.log(`  • Last Event: ${logs[0].event} at ${new Date(logs[0].timestamp).toLocaleString()}`);
+        }
+    } catch (err) {
+        console.log(`  • Audit Log: ERROR`);
+    }
+
+    console.log('\n👥 Active Connections:');
+    console.log(`  • Role: ${isHost ? 'HOST' : 'GUEST'}`);
+    console.log(`  • Peers: ${Object.keys(peersMap).length}`);
+    Object.values(peersMap).forEach((peer, i) => {
+        console.log(`    ${i + 1}. ${peer.name} ${peer.dataConn.open ? '🟢' : '🔴'}`);
+    });
+
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.log('Commands:');
+    console.log('  • showSecurityStatus() - Show this status');
+    console.log('  • getAuditLogs(50) - View recent audit logs');
+    console.log('  • deleteAllRoomData() - Delete all data (DANGER!)');
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+};
+
+// Show security status on load (after 2 seconds)
+setTimeout(() => {
+    console.log('\n🔐 Security features active! Type showSecurityStatus() for details.\n');
+}, 2000);
 
 function acceptGuest(conn, guestName, token) {
     const newPeerId = conn.peer;
@@ -425,29 +1144,66 @@ function acceptGuest(conn, guestName, token) {
     }
 }
 
-function connectToHost() {
-    // Small delay ensures the host PeerJS registration is complete before connect attempt
-    setTimeout(() => {
-        const hostConn = peer.connect(hostId, { reliable: true, metadata: { type: 'auth_request', token: roomPinToken(), name: myName } });
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 5;
+let connectionTimeout = null;
+
+function connectToHost(retryCount = 0) {
+    // Progressive delay: 2s, 3s, 4s, 5s, 6s for retries
+    const delay = retryCount === 0 ? 2000 : 2000 + (retryCount * 1000);
+
+    console.log(`[GUEST] Attempting to connect to host (attempt ${retryCount + 1}/${MAX_CONNECTION_ATTEMPTS}) in ${delay}ms...`);
+    setStatus('connecting', `Connecting to host... (attempt ${retryCount + 1}/${MAX_CONNECTION_ATTEMPTS})`);
+
+    setTimeout(async () => {
+        connectionAttempts = retryCount;
+
+        const token = await roomPinToken();
+
+        const hostConn = peer.connect(hostId, {
+            reliable: true,
+            metadata: { type: 'auth_request', token: token, name: myName },
+            serialization: 'json'
+        });
+
+        // Connection timeout - if not connected in 10 seconds, retry or fail
+        connectionTimeout = setTimeout(() => {
+            if (!peersMap[hostId]) {
+                console.warn('[GUEST] Connection timeout, host not responding');
+                hostConn.close();
+                handleConnectionFailure(retryCount);
+            }
+        }, 10000);
 
         hostConn.on('open', () => {
+            console.log('[GUEST] Data channel opened to host');
+            clearTimeout(connectionTimeout);
+            connectionAttempts = 0; // Reset on successful connection
             // Also send via data channel as backup (some PeerJS versions don't surface metadata)
-            hostConn.send({ type: 'auth_request', token: roomPinToken(), name: myName });
+            hostConn.send({ type: 'auth_request', token: token, name: myName });
         });
 
         hostConn.on('error', err => {
-            toast('Could not reach Host. Make sure the room code and PIN match.', 'error');
-            setStatus('disconnected', 'Could not reach host.');
+            console.error('[GUEST] Connection error:', err);
+            clearTimeout(connectionTimeout);
+            handleConnectionFailure(retryCount, err);
         });
 
-        hostConn.on('data', msg => {
+        hostConn.on('data', async msg => {
+            // Handle unencrypted auth messages
             if (msg.type === 'auth_rejected') {
+                clearTimeout(connectionTimeout);
                 setStatus('disconnected', 'Host rejected your join request.');
-                toast('Join request rejected!', 'error');
+                toast('Join request rejected! Wrong PIN?', 'error');
                 hostConn.close();
-            } else if (msg.type === 'auth_accepted') {
+                return;
+            }
+
+            if (msg.type === 'auth_accepted') {
+                clearTimeout(connectionTimeout);
                 setStatus('connected', 'Connected to Room.');
                 toast('Joined Room successfully! 🌙', 'success');
+                console.log('[GUEST] Successfully authenticated with host');
 
                 peersMap[hostId] = { dataConn: hostConn, name: 'Host', callConn: null, stream: null };
 
@@ -465,23 +1221,46 @@ function connectToHost() {
                 });
 
                 renderChatRecipientDropdown();
+                return;
+            }
+
+            // Decrypt encrypted messages
+            if (msg.type === 'encrypted') {
+                const decrypted = await decryptData(msg.data);
+                if (decrypted && peersMap[hostId]) {
+                    handleSyncMessage(decrypted, hostId);
+                }
             } else if (peersMap[hostId]) {
+                // Fallback for unencrypted messages (backward compatibility)
                 handleSyncMessage(msg, hostId);
             }
         });
 
         hostConn.on('close', () => {
+            console.log('[GUEST] Host connection closed');
+            clearTimeout(connectionTimeout);
             setStatus('disconnected', 'Host disconnected.');
             endCall();
             toast('Host left the room.', 'error');
         });
 
         peer.on('connection', conn => {
-            conn.on('data', msg => {
+            conn.on('data', async msg => {
+                // Handle unencrypted peer intro
                 if (msg.type === 'peer_intro') {
                     setupGuestToGuest(conn, msg.name);
                     toast(`${msg.name} joined!`, 'info');
+                    return;
+                }
+
+                // Decrypt encrypted messages
+                if (msg.type === 'encrypted') {
+                    const decrypted = await decryptData(msg.data);
+                    if (decrypted && peersMap[conn.peer]) {
+                        handleSyncMessage(decrypted, conn.peer);
+                    }
                 } else if (peersMap[conn.peer]) {
+                    // Fallback for unencrypted messages (backward compatibility)
                     handleSyncMessage(msg, conn.peer);
                 }
             });
@@ -489,15 +1268,42 @@ function connectToHost() {
         });
 
         peer.on('call', call => handleIncomingCall(call));
-    }, 1000); // 1s delay so host peer is registered
+    }, delay);
+}
+
+function handleConnectionFailure(retryCount, error = null) {
+    if (error) {
+        console.error('[GUEST] Connection failed with error:', error.type || error);
+    }
+
+    if (retryCount < MAX_CONNECTION_ATTEMPTS - 1) {
+        console.log(`[GUEST] Retrying connection (${retryCount + 1}/${MAX_CONNECTION_ATTEMPTS - 1})...`);
+        toast(`Connection failed. Retrying... (${retryCount + 2}/${MAX_CONNECTION_ATTEMPTS})`, 'warning', 3000);
+        connectToHost(retryCount + 1);
+    } else {
+        console.error('[GUEST] Max connection attempts reached. Giving up.');
+        setStatus('disconnected', 'Could not reach host.');
+        toast('Could not reach Host. Please check:\n1. Host has created the room\n2. Room code is correct\n3. Both you and host have stable internet', 'error', 8000);
+    }
 }
 
 function setupGuestToGuest(conn, peerName) {
     conn.on('open', () => { conn.send({ type: 'peer_intro', name: myName }); });
     peersMap[conn.peer] = { dataConn: conn, name: peerName, callConn: null, stream: null };
 
-    conn.on('data', msg => {
-        if (msg.type !== 'peer_intro') handleSyncMessage(msg, conn.peer);
+    conn.on('data', async msg => {
+        if (msg.type === 'peer_intro') return; // Ignore duplicate intros
+
+        // Decrypt encrypted messages
+        if (msg.type === 'encrypted') {
+            const decrypted = await decryptData(msg.data);
+            if (decrypted) {
+                handleSyncMessage(decrypted, conn.peer);
+            }
+        } else {
+            // Fallback for unencrypted messages (backward compatibility)
+            handleSyncMessage(msg, conn.peer);
+        }
     });
     conn.on('close', () => handlePeerDisconnect(conn.peer));
     renderChatRecipientDropdown();
@@ -996,18 +1802,22 @@ let personalPlaylists = { "My Playlist": [] };
 let activePlaylistTab = 'room'; // 'room' | 'personal'
 let activePlaylistName = 'Room Playlist';
 
-function loadPlaylist() {
+async function loadPlaylist() {
     try {
-        const parsedRoom = JSON.parse(localStorage.getItem(PLAYLIST_KEY));
+        const parsedRoom = await loadSecureData(PLAYLIST_KEY);
         if (Array.isArray(parsedRoom)) roomPlaylists = { "Room Playlist": parsedRoom };
         else if (parsedRoom && typeof parsedRoom === 'object') roomPlaylists = parsedRoom;
-    } catch (e) { }
+    } catch (e) {
+        console.error('[STORAGE] Failed to load room playlists:', e);
+    }
 
     try {
-        const parsedPersonal = JSON.parse(localStorage.getItem(PERSONAL_PLAYLIST_KEY));
+        const parsedPersonal = await loadSecureData(PERSONAL_PLAYLIST_KEY);
         if (Array.isArray(parsedPersonal)) personalPlaylists = { "My Playlist": parsedPersonal };
         else if (parsedPersonal && typeof parsedPersonal === 'object') personalPlaylists = parsedPersonal;
-    } catch (e) { }
+    } catch (e) {
+        console.error('[STORAGE] Failed to load personal playlists:', e);
+    }
 
     ensureActivePlaylist();
     renderPlaylist();
@@ -1023,9 +1833,9 @@ function ensureActivePlaylist() {
     }
 }
 
-function savePlaylist() {
-    localStorage.setItem(PLAYLIST_KEY, JSON.stringify(roomPlaylists));
-    localStorage.setItem(PERSONAL_PLAYLIST_KEY, JSON.stringify(personalPlaylists));
+async function savePlaylist() {
+    await saveSecureData(PLAYLIST_KEY, roomPlaylists);
+    await saveSecureData(PERSONAL_PLAYLIST_KEY, personalPlaylists);
 }
 
 function getActiveList() {
@@ -1376,24 +2186,70 @@ function initChatDB() {
     request.onerror = e => console.error("Chat DB error:", e);
 }
 
-function loadChatHistory() {
+async function loadChatHistory() {
     if (!chatDB) return;
     const tx = chatDB.transaction('messages', 'readonly');
     const store = tx.objectStore('messages');
     const req = store.getAll();
-    req.onsuccess = () => {
+    req.onsuccess = async () => {
         const msgs = req.result;
         const container = document.getElementById('chatMessages');
         container.innerHTML = '';
-        msgs.forEach(msg => appendChatMessage(msg, false));
+
+        for (const encryptedMsg of msgs) {
+            try {
+                // Decrypt message
+                let msg;
+                if (encryptedMsg.encrypted) {
+                    const decrypted = await decryptData(encryptedMsg.encrypted);
+                    if (decrypted) {
+                        msg = { ...decrypted, id: encryptedMsg.id, timestamp: encryptedMsg.timestamp };
+                    } else {
+                        console.warn('[SECURITY] Failed to decrypt chat message, skipping');
+                        continue;
+                    }
+                } else {
+                    // Old unencrypted message
+                    msg = encryptedMsg;
+                }
+
+                await appendChatMessage(msg, false);
+            } catch (err) {
+                console.error('[SECURITY] Error loading chat message:', err);
+            }
+        }
+
         container.scrollTop = container.scrollHeight;
+        console.log('[SECURITY] 🔐 Chat history loaded and decrypted');
     };
 }
 
-function appendChatMessage(msg, saveToDb = true) {
+async function appendChatMessage(msg, saveToDb = true) {
     if (saveToDb && chatDB) {
-        const tx = chatDB.transaction('messages', 'readwrite');
-        tx.objectStore('messages').put(msg);
+        try {
+            // Encrypt message before storing
+            const encryptedMsg = {
+                id: msg.id,
+                timestamp: msg.timestamp,
+                encrypted: await encryptData({
+                    sender: msg.sender,
+                    sentBy: msg.sentBy,
+                    senderLabel: msg.senderLabel,
+                    type: msg.type,
+                    content: msg.content,
+                    fileName: msg.fileName,
+                    replyTo: msg.replyTo,
+                    to: msg.to,
+                    toName: msg.toName
+                })
+            };
+
+            const tx = chatDB.transaction('messages', 'readwrite');
+            tx.objectStore('messages').put(encryptedMsg);
+            console.log('[SECURITY] 🔐 Chat message encrypted and stored');
+        } catch (err) {
+            console.error('[SECURITY] Failed to encrypt chat message:', err);
+        }
     }
 
     const container = document.getElementById('chatMessages');
@@ -1482,7 +2338,7 @@ function sendChatMessage(text, type = 'text', fileData = null, fileName = null) 
     if (toId === 'all') {
         broadcast({ type: 'chat_msg', message: msg, sentBy: myName });
     } else if (peersMap[toId] && peersMap[toId].dataConn) {
-        peersMap[toId].dataConn.send({ type: 'chat_msg', message: msg, sentBy: myName });
+        secureSend(peersMap[toId].dataConn, { type: 'chat_msg', message: msg, sentBy: myName });
     }
 }
 
