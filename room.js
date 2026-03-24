@@ -1446,15 +1446,13 @@ async function startCall() {
         startCallBtn.classList.add('end-call');
         isInCall = true;
 
-        // Notify all peers that a call is starting (so they see ring UI)
-        broadcast({ type: 'call_ring', callerName: myName });
-        // Small delay then actually call
+        // Directly call all connected peers — no ringtone needed when everyone is in the room
         setTimeout(() => {
             Object.keys(peersMap).forEach(id => {
                 const call = peer.call(id, localStream);
                 if (call) handleOutboundCall(call, id);
             });
-        }, 500);
+        }, 400);
 
     } catch (err) { toast('Could not access camera/mic.', 'error'); }
 }
@@ -1468,11 +1466,16 @@ function handleOutboundCall(call, id) {
 
 function handleIncomingCall(call) {
     const id = call.peer;
-    const callerName = peersMap[id]?.name || 'Someone';
     if (!peersMap[id]) return;
+    const callerName = peersMap[id]?.name || 'Someone';
 
-    // Show ring UI instead of auto-answering
-    showIncomingCallUI(callerName, call);
+    if (!document.hidden) {
+        // Tab is active — user is already in the room, auto-answer with no interruption
+        answerIncomingCall(call);
+    } else {
+        // Tab is hidden — user is away, show ring overlay + sound + browser notification
+        showIncomingCallUI(callerName, call);
+    }
 }
 
 function addVideoPanel(id, stream) {
