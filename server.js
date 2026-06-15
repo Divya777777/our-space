@@ -25,7 +25,7 @@ const server = app.listen(PORT, () => {
 
 // Create PeerJS server
 const peerServer = ExpressPeerServer(server, {
-    path: '/peerjs',
+    path: '/',
     debug: false, // Set to true for verbose logging
     allow_discovery: true,
     proxied: false,

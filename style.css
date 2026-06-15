@@ -977,25 +977,68 @@ body {
   box-shadow: 0 8px 32px rgba(192, 57, 43, 0.6);
 }
 
-/* ── PIN field ───────────────────────────────────────── */
-.tag-private {
-  background: rgba(155, 109, 255, 0.18);
-  color: var(--accent-purple);
-  font-size: 0.65rem;
-  border-radius: 6px;
-  padding: 2px 7px;
-  letter-spacing: 0.05em;
-  text-transform: none;
-  font-weight: 600;
-  margin-left: 6px;
-  vertical-align: middle;
+/* ── Google Sign-In & Auth ──────────────────────────── */
+.google-signin-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0 8px;
+  min-height: 44px;
 }
 
-.pin-hint {
-  font-size: 0.72rem;
+.user-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-purple);
+  object-fit: cover;
+}
+
+.user-greeting {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.user-greeting strong {
+  color: var(--accent-moon);
+}
+
+.signout-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
   color: var(--text-muted);
-  margin-top: 6px;
-  line-height: 1.5;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.signout-btn:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: #ff8080;
+  border-color: rgba(255, 80, 80, 0.3);
+}
+
+.room-action-section {
+  margin-bottom: 4px;
+}
+
+.room-action-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  font-weight: 500;
 }
 
 /* ============================================================
