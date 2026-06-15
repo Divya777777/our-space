@@ -15,7 +15,7 @@
  * 3. Add your origins: http://localhost:3000 (and your production domain)
  * 4. Paste the Client ID below
  */
-const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '351421523260-04n8q3b4g79ofjpins9sd4m12933b9rl.apps.googleusercontent.com';
 
 let currentUser = null; // { name, email, avatar }
 
