@@ -2606,6 +2606,10 @@ body {
   animation: fadeInOverlay 0.3s ease;
 }
 
+.auth-modal.show {
+  display: flex;
+}
+
 @keyframes fadeInOverlay {
   from {
     opacity: 0;
