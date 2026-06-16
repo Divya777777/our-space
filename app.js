@@ -64,12 +64,12 @@ function handleGoogleSignIn(response) {
       avatar: payload.picture || '',
     };
 
-    localStorage.setItem('ourspace_name', currentUser.name);
+    // Store avatar and email (name will be chosen by user in next step)
     localStorage.setItem('ourspace_avatar', currentUser.avatar);
     localStorage.setItem('ourspace_email', currentUser.email);
 
-    showRoomStep();
-    console.log('[AUTH] Google Sign-In successful:', currentUser.name);
+    showNameStep();
+    console.log('[AUTH] Google Sign-In successful:', currentUser.email);
   } catch (err) {
     console.error('[AUTH] Failed to parse Google credential:', err);
   }
@@ -79,8 +79,29 @@ function handleGoogleSignIn(response) {
 //  UI STEPS
 // ──────────────────────────────────────────────────────
 
+function showNameStep() {
+  document.getElementById('signInStep').style.display = 'none';
+  document.getElementById('nameStep').style.display = 'block';
+
+  const avatar = currentUser?.avatar || localStorage.getItem('ourspace_avatar') || '';
+
+  // Show avatar in name step
+  if (avatar) {
+    const img = document.getElementById('nameStepAvatar');
+    img.src = avatar;
+    img.style.display = 'block';
+  }
+
+  // Pre-fill with Google name as suggestion
+  const displayNameInput = document.getElementById('displayNameInput');
+  displayNameInput.value = currentUser?.name || '';
+  displayNameInput.focus();
+  displayNameInput.select();
+}
+
 function showRoomStep() {
   document.getElementById('signInStep').style.display = 'none';
+  document.getElementById('nameStep').style.display = 'none';
   document.getElementById('roomStep').style.display = 'block';
 
   const name = currentUser?.name || localStorage.getItem('ourspace_name') || 'You';
@@ -96,6 +117,7 @@ function showRoomStep() {
 
 function showSignInStep() {
   document.getElementById('signInStep').style.display = 'block';
+  document.getElementById('nameStep').style.display = 'none';
   document.getElementById('roomStep').style.display = 'none';
   currentUser = null;
   localStorage.removeItem('ourspace_name');
@@ -148,8 +170,10 @@ function enterRoom(roomCode) {
 
   saveRecentRoom(name, cleanCode);
   localStorage.setItem('ourspace_name', name);
-  sessionStorage.setItem('ourspace_room', cleanCode); // Room code remains session-only
-  // Store avatar and email in sessionStorage so guest can send them in auth_request
+
+  // Store all user data in sessionStorage for room.js
+  sessionStorage.setItem('ourspace_room', cleanCode);
+  sessionStorage.setItem('ourspace_name', name);
   sessionStorage.setItem('ourspace_avatar', currentUser?.avatar || localStorage.getItem('ourspace_avatar') || '');
   sessionStorage.setItem('ourspace_email', currentUser?.email || localStorage.getItem('ourspace_email') || '');
 
@@ -240,6 +264,26 @@ window.joinRecent = function (room) {
 // ──────────────────────────────────────────────────────
 //  EVENT LISTENERS
 // ──────────────────────────────────────────────────────
+
+// Continue from name step to room step
+document.getElementById('continueToRoomBtn').addEventListener('click', () => {
+  const displayName = document.getElementById('displayNameInput').value.trim();
+  if (!displayName) {
+    shake('displayNameInput');
+    return;
+  }
+
+  // Store the user-chosen name
+  currentUser.name = displayName;
+  localStorage.setItem('ourspace_name', displayName);
+
+  showRoomStep();
+});
+
+// Allow Enter key to submit name
+document.getElementById('displayNameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('continueToRoomBtn').click();
+});
 
 // Create room
 document.getElementById('createBtn').addEventListener('click', () => {

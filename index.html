@@ -49,7 +49,31 @@
         </div>
       </div>
 
-      <!-- Step 2: Room Selection (shown after sign-in) -->
+      <!-- Step 2: Name Selection (shown after Google sign-in) -->
+      <div id="nameStep" style="display:none">
+        <div class="user-info-bar" id="nameStepUserInfo">
+          <img id="nameStepAvatar" class="user-avatar" src="" alt="" style="display:none" />
+          <span class="user-greeting">Signed in successfully!</span>
+        </div>
+
+        <div class="card-icon" style="margin-top: 24px;">✨</div>
+        <h2 class="card-title">Choose Your Display Name</h2>
+        <p class="card-desc">This is how others will see you in the room</p>
+
+        <div class="input-group" style="margin-top: 24px;">
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input id="displayNameInput" type="text" class="glass-input" placeholder="Enter your name…" maxlength="30"
+              autocomplete="off" style="font-weight: 600;" />
+          </div>
+        </div>
+
+        <button class="enter-btn" id="continueToRoomBtn" style="width:100%; margin-top: 16px;">
+          <span>Continue →</span>
+        </button>
+      </div>
+
+      <!-- Step 3: Room Selection (shown after name entry) -->
       <div id="roomStep" style="display:none">
         <!-- User info bar -->
         <div class="user-info-bar" id="userInfoBar">
