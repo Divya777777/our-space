@@ -1,0 +1,44 @@
+# Railway ignore file - exclude files from deployment
+
+# Development files
+node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# SQLite database (we'll use PostgreSQL in production)
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# Environment files
+.env.local
+.env.development
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Git files
+.git/
+.gitignore
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

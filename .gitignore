@@ -20,3 +20,8 @@ Thumbs.db
 
 # Local server logs
 *.log
+
+# Secrets and sensitive files
+RAILWAY_SECRETS.txt
+*_SECRETS.txt
+*.env.local

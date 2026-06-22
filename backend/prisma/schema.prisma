@@ -1,0 +1,324 @@
+// Prisma schema for Our Space - Multi-Database Support
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model users {
+  user_id                Int       @id @default(autoincrement())
+  google_id              String    @unique
+  email                  String    @unique
+  display_name           String
+  avatar_url             String?
+  encryption_key_salt    String?
+  failed_login_attempts  Int       @default(0)
+  account_locked         Boolean   @default(false)
+  locked_until           DateTime?
+  last_login_at          DateTime?
+  last_login_ip          String?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @default(now()) @updatedAt
+  deleted_at             DateTime?
+
+  hosted_rooms           rooms[]                   @relation("HostRooms")
+  room_memberships       room_members[]
+  sent_messages          messages[]
+  created_playlists      playlists[]
+  sessions               user_sessions[]
+  preferences            user_preferences?
+  join_requests          pending_join_requests[]
+  call_participations    call_participants[]
+  recent_rooms           recent_rooms[]
+  audit_logs             audit_logs[]
+}
+
+model user_sessions {
+  session_id       Int       @id @default(autoincrement())
+  user_id          Int
+  access_token     String
+  refresh_token    String
+  access_expires_at DateTime
+  refresh_expires_at DateTime
+  ip_address       String?
+  user_agent       String?
+  is_active        Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  last_accessed_at DateTime  @default(now())
+
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model user_preferences {
+  preference_id    Int       @id @default(autoincrement())
+  user_id          Int       @unique
+  theme            String    @default("light")
+  notifications_enabled Boolean @default(true)
+  auto_join_rooms  Boolean   @default(false)
+  default_video_quality String @default("auto")
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @default(now()) @updatedAt
+
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+}
+
+model rooms {
+  room_id          Int       @id @default(autoincrement())
+  room_code        String    @unique
+  room_name        String?
+  host_user_id     Int
+  max_members      Int       @default(10)
+  is_public        Boolean   @default(false)
+  requires_approval Boolean  @default(true)
+  is_active        Boolean   @default(true)
+  encryption_enabled Boolean @default(true)
+  last_activity_at DateTime  @default(now())
+  created_at       DateTime  @default(now())
+  closed_at        DateTime?
+
+  host             users     @relation("HostRooms", fields: [host_user_id], references: [user_id], onDelete: Cascade)
+  members          room_members[]
+  messages         messages[]
+  playlists        playlists[]
+  join_requests    pending_join_requests[]
+  call_sessions    call_sessions[]
+  now_playing      now_playing[]
+  recent_visits    recent_rooms[]
+
+  @@index([room_code])
+  @@index([host_user_id])
+}
+
+model room_members {
+  member_id        Int       @id @default(autoincrement())
+  room_id          Int
+  user_id          Int
+  role             String    @default("member")
+  joined_at        DateTime  @default(now())
+  left_at          DateTime?
+  is_online        Boolean   @default(true)
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([room_id, user_id])
+  @@index([room_id])
+  @@index([user_id])
+}
+
+model pending_join_requests {
+  request_id       Int       @id @default(autoincrement())
+  room_id          Int
+  user_id          Int
+  status           String    @default("pending")
+  requested_at     DateTime  @default(now())
+  responded_at     DateTime?
+  expires_at       DateTime
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([room_id])
+  @@index([user_id])
+}
+
+model messages {
+  message_id       Int       @id @default(autoincrement())
+  room_id          Int
+  sender_user_id   Int
+  content_encrypted String
+  encryption_iv    String
+  auth_tag         String?
+  encryption_algorithm String @default("AES-256-GCM")
+  message_type     String    @default("text")
+  is_system_message Boolean  @default(false)
+  sent_at          DateTime  @default(now())
+  deleted_at       DateTime?
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  sender           users     @relation(fields: [sender_user_id], references: [user_id], onDelete: Cascade)
+  files            message_files[]
+
+  @@index([room_id])
+  @@index([sender_user_id])
+}
+
+model message_files {
+  file_id          Int       @id @default(autoincrement())
+  message_id       Int
+  original_filename String
+  stored_filename  String
+  file_size        Int
+  file_type        String
+  encryption_iv    String
+  checksum         String
+  uploaded_at      DateTime  @default(now())
+
+  message          messages  @relation(fields: [message_id], references: [message_id], onDelete: Cascade)
+
+  @@index([message_id])
+}
+
+model songs {
+  song_id          Int       @id @default(autoincrement())
+  video_id         String    @unique
+  title            String
+  artist           String?
+  duration_seconds Int
+  thumbnail_url    String?
+  platform         String    @default("youtube")
+  added_at         DateTime  @default(now())
+
+  playlist_songs   playlist_songs[]
+  playback_history playback_history[]
+
+  @@index([video_id])
+}
+
+model playlists {
+  playlist_id      Int       @id @default(autoincrement())
+  room_id          Int
+  created_by_user_id Int
+  playlist_name    String
+  playlist_type    String    @default("room")
+  is_default       Boolean   @default(false)
+  is_active        Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @default(now()) @updatedAt
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  creator          users     @relation(fields: [created_by_user_id], references: [user_id], onDelete: Cascade)
+  songs            playlist_songs[]
+  now_playing      now_playing[]
+
+  @@index([room_id])
+  @@index([created_by_user_id])
+}
+
+model playlist_songs {
+  playlist_song_id Int       @id @default(autoincrement())
+  playlist_id      Int
+  song_id          Int
+  added_by_user_id Int?
+  position         Int
+  added_at         DateTime  @default(now())
+
+  playlist         playlists @relation(fields: [playlist_id], references: [playlist_id], onDelete: Cascade)
+  song             songs     @relation(fields: [song_id], references: [song_id], onDelete: Cascade)
+
+  @@unique([playlist_id, song_id])
+  @@index([playlist_id])
+  @@index([song_id])
+}
+
+model now_playing {
+  now_playing_id   Int       @id @default(autoincrement())
+  room_id          Int
+  playlist_id      Int?
+  video_id         String
+  started_at       DateTime  @default(now())
+  current_time_seconds Float?
+  is_playing       Boolean   @default(true)
+  controlled_by_user_id Int?
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  playlist         playlists? @relation(fields: [playlist_id], references: [playlist_id], onDelete: SetNull)
+
+  @@index([room_id])
+}
+
+model playback_history {
+  history_id       Int       @id @default(autoincrement())
+  song_id          Int
+  room_id          Int?
+  played_at        DateTime  @default(now())
+  play_count       Int       @default(1)
+
+  song             songs     @relation(fields: [song_id], references: [song_id], onDelete: Cascade)
+
+  @@index([song_id])
+  @@index([room_id])
+}
+
+model call_sessions {
+  call_id          Int       @id @default(autoincrement())
+  room_id          Int
+  started_at       DateTime  @default(now())
+  ended_at         DateTime?
+  call_type        String    @default("video")
+
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+  participants     call_participants[]
+
+  @@index([room_id])
+}
+
+model call_participants {
+  participant_id   Int       @id @default(autoincrement())
+  call_id          Int
+  user_id          Int
+  joined_at        DateTime  @default(now())
+  left_at          DateTime?
+  peer_id          String?
+
+  call             call_sessions @relation(fields: [call_id], references: [call_id], onDelete: Cascade)
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([call_id])
+  @@index([user_id])
+}
+
+model recent_rooms {
+  visit_id         Int       @id @default(autoincrement())
+  user_id          Int
+  room_id          Int
+  last_visited_at  DateTime  @default(now())
+  visit_count      Int       @default(1)
+  total_time_spent_seconds Int @default(0)
+  is_favorite      Boolean   @default(false)
+
+  user             users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  room             rooms     @relation(fields: [room_id], references: [room_id], onDelete: Cascade)
+
+  @@unique([user_id, room_id])
+  @@index([user_id])
+  @@index([room_id])
+}
+
+model audit_logs {
+  log_id           Int       @id @default(autoincrement())
+  user_id          Int?
+  action           String
+  resource_type    String?
+  resource_id      Int?
+  ip_address       String?
+  user_agent       String?
+  details          String?
+  severity         String    @default("info")
+  created_at       DateTime  @default(now())
+
+  user             users?    @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([action])
+}
+
+model connection_logs {
+  log_id           Int       @id @default(autoincrement())
+  room_id          Int?
+  peer_id_from     String
+  peer_id_to       String
+  connection_type  String
+  connection_quality String?
+  latency_ms       Int?
+  packet_loss      Float?
+  created_at       DateTime  @default(now())
+
+  @@index([room_id])
+}

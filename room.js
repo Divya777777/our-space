@@ -6,10 +6,26 @@
 
 // ─── SESSION (cleared on browser close) ──────────────
 const myName = sessionStorage.getItem('ourspace_name') || 'You';
-const roomId = sessionStorage.getItem('ourspace_room') || '';
+const roomId = sessionStorage.getItem('currentRoomCode') || sessionStorage.getItem('ourspace_room') || '';
 const myAvatar = sessionStorage.getItem('ourspace_avatar') || '';
+const currentUserId = sessionStorage.getItem('ourspace_userId') || '';
 
 if (!roomId) { window.location.href = 'index.html'; }
+
+// ─── DATABASE INTEGRATION ────────────────────────────
+let currentRoomId = sessionStorage.getItem('currentRoomId');
+if (currentRoomId) {
+    currentRoomId = parseInt(currentRoomId);
+    console.log('[DATABASE] Current room ID:', currentRoomId);
+} else {
+    currentRoomId = null;
+    console.log('[DATABASE] No room ID found in session storage');
+}
+let roomStartTime = Date.now();
+let messageCache = [];
+let currentPlaylistId = null;
+// Map playlist names to their database IDs
+let playlistIdMap = {}; // { "playlistName": "playlistId" }
 
 // ─── END-TO-END ENCRYPTION (AES-256-GCM) ─────────────
 // Encrypts all messages, files, and sync data BEFORE sending via WebRTC
@@ -713,15 +729,23 @@ async function setupPeer() {
         debug: 0 // Set to 3 for verbose debugging if needed
     };
 
-    // If running on local server (npm start), use custom server
-    if (isLocalServer && window.location.port) {
-        peerConfig.host = window.location.hostname;
-        peerConfig.port = parseInt(window.location.port);
+    // Configure PeerJS server based on environment
+    if (window.location.hostname === 'divya777777.github.io') {
+        // Production: Use Railway backend
+        peerConfig.host = 'our-space-backend-production.up.railway.app';
+        peerConfig.port = 443;
         peerConfig.path = '/peerjs';
-        peerConfig.key = 'ourspace'; // Must match the key in server.js
-        console.log('[PEER] Using LOCAL PeerJS server at:', `${peerConfig.host}:${peerConfig.port}${peerConfig.path}`);
+        peerConfig.secure = true;
+        console.log('[PEER] Using production PeerJS server at:', `${peerConfig.host}:${peerConfig.port}${peerConfig.path}`);
+    } else if (isLocalServer && window.location.port) {
+        // Development: Use local backend
+        peerConfig.host = window.location.hostname;
+        peerConfig.port = 9000; // Backend PeerJS server port
+        peerConfig.path = '/peerjs';
+        peerConfig.secure = false;
+        console.log('[PEER] Using backend PeerJS server at:', `${peerConfig.host}:${peerConfig.port}${peerConfig.path}`);
     } else {
-        // Otherwise use default PeerJS cloud (works with file:// protocol)
+        // Fallback: Use default PeerJS cloud
         console.log('[PEER] Using CLOUD PeerJS server (default)');
     }
 
@@ -2029,7 +2053,7 @@ const PLAYLIST_KEY = `ourspace_playlist_${roomId}`;
 const PERSONAL_PLAYLIST_KEY = 'ourspace_personal_playlist';
 
 let roomPlaylists = { "Room Playlist": [] };
-let personalPlaylists = { "My Playlist": [] };
+let personalPlaylists = { "Random": [] };
 let activePlaylistTab = 'room'; // 'room' | 'personal'
 let activePlaylistName = 'Room Playlist';
 
@@ -2044,7 +2068,7 @@ async function loadPlaylist() {
 
     try {
         const parsedPersonal = await loadSecureData(PERSONAL_PLAYLIST_KEY);
-        if (Array.isArray(parsedPersonal)) personalPlaylists = { "My Playlist": parsedPersonal };
+        if (Array.isArray(parsedPersonal)) personalPlaylists = { "Random": parsedPersonal };
         else if (parsedPersonal && typeof parsedPersonal === 'object') personalPlaylists = parsedPersonal;
     } catch (e) {
         console.error('[STORAGE] Failed to load personal playlists:', e);
@@ -2056,7 +2080,7 @@ async function loadPlaylist() {
 
 function ensureActivePlaylist() {
     if (Object.keys(roomPlaylists).length === 0) roomPlaylists["Room Playlist"] = [];
-    if (Object.keys(personalPlaylists).length === 0) personalPlaylists["My Playlist"] = [];
+    if (Object.keys(personalPlaylists).length === 0) personalPlaylists["Random"] = [];
 
     const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
     if (!dict[activePlaylistName]) {
@@ -2112,6 +2136,14 @@ function renderPlaylist() {
 document.querySelectorAll('.pl-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         activePlaylistTab = tab.dataset.tab;
+
+        // Set default playlist name based on tab
+        if (activePlaylistTab === 'personal') {
+            activePlaylistName = 'Random';
+        } else {
+            activePlaylistName = 'Room Playlist';
+        }
+
         ensureActivePlaylist();
         renderPlaylist();
     });
@@ -2122,18 +2154,38 @@ document.getElementById('playlistDropdown').addEventListener('change', (e) => {
     renderPlaylist();
 });
 
-document.getElementById('newPlaylistBtn').addEventListener('click', () => {
+document.getElementById('newPlaylistBtn').addEventListener('click', async () => {
     const name = prompt("Enter new playlist name:");
     if (name && name.trim()) {
         const cleanName = name.trim();
+        const playlistType = activePlaylistTab === 'room' ? 'room' : 'personal';
+
+        // Create playlist in database if we have a room ID
+        if (currentRoomId) {
+            try {
+                const result = await api.createPlaylist(currentRoomId, cleanName, playlistType);
+                if (result.success && result.playlist) {
+                    // Store the playlist ID in the map
+                    playlistIdMap[cleanName] = result.playlist.playlistId;
+                    console.log(`[PLAYLIST] Created ${playlistType} playlist "${cleanName}" (ID: ${result.playlist.playlistId}) in database`);
+                }
+            } catch (err) {
+                console.error('[PLAYLIST] Failed to create playlist in database:', err);
+                // Continue anyway - save locally
+            }
+        }
+
+        // Create locally
         if (activePlaylistTab === 'room') {
             if (!roomPlaylists[cleanName]) roomPlaylists[cleanName] = [];
         } else {
             if (!personalPlaylists[cleanName]) personalPlaylists[cleanName] = [];
         }
+
         activePlaylistName = cleanName;
         savePlaylist();
         renderPlaylist();
+
         if (activePlaylistTab === 'room') {
             sendSync({ type: 'playlist_sync', roomPlaylists });
         }
@@ -2148,10 +2200,57 @@ document.getElementById('addToPlaylistBtn').addEventListener('click', async () =
     const titleEL = document.getElementById('ytTrackTitle');
     const title = titleEL.textContent && titleEL.textContent !== '—' ? titleEL.textContent : ytVideoId;
 
-    const item = { videoId: ytVideoId, title, addedAt: Date.now() };
+    // Get duration from YouTube player
+    const duration = ytPlayer && ytPlayer.getDuration ? Math.floor(ytPlayer.getDuration()) : 0;
+
+    // Try to parse artist from title (format: "Artist - Title")
+    let artist = null;
+    if (title.includes(' - ')) {
+        const parts = title.split(' - ');
+        if (parts.length >= 2) {
+            artist = parts[0].trim();
+        }
+    }
+
+    // Build thumbnail URL
+    const thumbnail = `https://img.youtube.com/vi/${ytVideoId}/mqdefault.jpg`;
+
+    const item = {
+        videoId: ytVideoId,
+        title,
+        artist,
+        duration,
+        thumbnail,
+        addedAt: Date.now()
+    };
     list.push(item);
     savePlaylist();
     renderPlaylist();
+
+    // Save to database - use the playlist ID from the map for the current active playlist
+    const activePlaylistId = playlistIdMap[activePlaylistName];
+    if (activePlaylistId) {
+        try {
+            const result = await api.addSongToPlaylist(activePlaylistId, {
+                videoId: ytVideoId,
+                title: title,
+                artist: artist || 'Unknown',
+                durationSeconds: duration || 0,
+                thumbnailUrl: thumbnail
+            });
+
+            if (result.success && result.playlistSong) {
+                // Store the playlistSongId for future deletion
+                item.playlistSongId = result.playlistSong.playlistSongId;
+                console.log(`[PLAYLIST] Song saved to playlist "${activePlaylistName}" (ID: ${activePlaylistId}) in database:`, title);
+            }
+        } catch (err) {
+            console.error('[PLAYLIST] Failed to save song to database:', err);
+            // Continue anyway - song is saved locally
+        }
+    } else {
+        console.warn(`[PLAYLIST] No playlist ID found for "${activePlaylistName}", song not saved to database`);
+    }
 
     // Sync to partner only if acting on Room playlist
     if (activePlaylistTab === 'room') {
@@ -2167,9 +2266,22 @@ window.playFromPlaylist = function (i) {
     sendSync({ type: 'yt_load', videoId: item.videoId, sentBy: myName });
 };
 
-window.deleteFromPlaylist = function (i) {
+window.deleteFromPlaylist = async function (i) {
     const list = getActiveList();
     const removed = list[i];
+    if (!removed) return;
+
+    // Delete from database if it's a room playlist and has playlistSongId
+    if (activePlaylistTab === 'room' && removed.playlistSongId) {
+        try {
+            await api.removeSongFromPlaylist(removed.playlistSongId);
+            console.log('[PLAYLIST] Song removed from database:', removed.title);
+        } catch (err) {
+            console.error('[PLAYLIST] Failed to remove song from database:', err);
+            // Continue anyway - we'll remove it locally
+        }
+    }
+
     list.splice(i, 1);
     savePlaylist();
     renderPlaylist();
@@ -2244,7 +2356,7 @@ if (plMenuBtn && plMenuPopup) {
 
     document.getElementById('plMenuMove').addEventListener('click', () => {
         plMenuPopup.classList.remove('show');
-        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
+        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'Random') {
             toast('Cannot move default playlist.', 'info');
             return;
         }
@@ -2273,14 +2385,14 @@ if (plMenuBtn && plMenuPopup) {
 
     document.getElementById('plMenuDelete').addEventListener('click', () => {
         plMenuPopup.classList.remove('show');
-        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'My Playlist') {
+        if (activePlaylistName === 'Room Playlist' || activePlaylistName === 'Random') {
             toast('Cannot delete default playlist.', 'info');
             return;
         }
         if (confirm(`Are you sure you want to delete "${activePlaylistName}"?`)) {
             const dict = activePlaylistTab === 'room' ? roomPlaylists : personalPlaylists;
             delete dict[activePlaylistName];
-            activePlaylistName = activePlaylistTab === 'room' ? "Room Playlist" : "My Playlist";
+            activePlaylistName = activePlaylistTab === 'room' ? "Room Playlist" : "Random";
             savePlaylist();
             renderPlaylist();
             if (activePlaylistTab === 'room') sendSync({ type: 'playlist_sync', roomPlaylists });
@@ -2546,9 +2658,23 @@ async function appendChatMessage(msg, saveToDb = true) {
     }
 }
 
-function sendChatMessage(text, type = 'text', fileData = null, fileName = null) {
+async function sendChatMessage(text, type = 'text', fileData = null, fileName = null) {
     const toId = document.getElementById('chatRecipient')?.value || 'all';
     const toName = toId === 'all' ? 'Everyone' : (peersMap[toId] ? peersMap[toId].name : 'Unknown');
+
+    // Save to database first (if room ID exists)
+    if (currentRoomId && type === 'text' && toId === 'all') {
+        try {
+            await api.sendMessage(currentRoomId, {
+                content: text,
+                messageType: 'text'
+            });
+            console.log('[MESSAGES] Saved to database');
+        } catch (err) {
+            console.error('[MESSAGES] Failed to save to database:', err);
+            // Continue with P2P even if database save fails
+        }
+    }
 
     const msg = {
         id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -2632,6 +2758,203 @@ if (chatFileInput) {
         reader.readAsDataURL(file);
     });
 }
+
+// ═══════════════════════════════════════════════════════
+//  DATABASE INTEGRATION FUNCTIONS
+// ═══════════════════════════════════════════════════════
+
+// Load message history from database
+async function loadMessageHistory() {
+    if (!currentRoomId) return;
+
+    try {
+        const result = await api.getRoomMessages(currentRoomId, 100);
+
+        if (result.success && result.messages.length > 0) {
+            messageCache = result.messages;
+
+            // Display messages in chat
+            result.messages.forEach(msg => {
+                const chatMsg = {
+                    id: msg.messageId,
+                    sender: msg.sender.displayName,
+                    sentBy: msg.sender.displayName,
+                    senderLabel: msg.sender.displayName,
+                    type: 'text',
+                    content: msg.content,
+                    timestamp: new Date(msg.sentAt).getTime(),
+                    to: 'all',
+                    toName: 'Everyone'
+                };
+                appendChatMessage(chatMsg, false);
+            });
+
+            console.log(`[MESSAGES] Loaded ${result.messages.length} messages from database`);
+        }
+    } catch (err) {
+        console.error('[MESSAGES] Failed to load message history:', err);
+    }
+}
+
+// Load playlists from database
+async function loadPlaylists() {
+    console.log('[PLAYLIST] loadPlaylists called, currentRoomId:', currentRoomId);
+    if (!currentRoomId) {
+        console.log('[PLAYLIST] No currentRoomId, skipping playlist load');
+        return;
+    }
+
+    try {
+        console.log('[PLAYLIST] Fetching playlists for room:', currentRoomId);
+        const result = await api.getRoomPlaylists(currentRoomId);
+        console.log('[PLAYLIST] API response:', result);
+
+        if (result.success && result.playlists && result.playlists.length > 0) {
+            // Initialize playlists objects if needed
+            if (!roomPlaylists) roomPlaylists = {};
+            if (!personalPlaylists) personalPlaylists = {};
+
+            let defaultPlaylistName = 'Room Playlist';
+            let roomPlaylistCount = 0;
+            let personalPlaylistCount = 0;
+
+            // Load ALL playlists and separate by type
+            result.playlists.forEach(playlist => {
+                const playlistName = playlist.playlistName || 'Room Playlist';
+                const playlistType = playlist.playlistType || 'room'; // Default to 'room' if not specified
+
+                console.log(`[PLAYLIST] Processing playlist "${playlistName}" with type: "${playlistType}"`);
+
+                // Store playlist ID in the map
+                playlistIdMap[playlistName] = playlist.playlistId;
+
+                // Convert songs to local playlist format
+                const songs = (playlist.songs || []).map(song => ({
+                    videoId: song.videoId,
+                    title: song.title,
+                    artist: song.artist,
+                    duration: song.durationSeconds,
+                    thumbnail: song.thumbnailUrl,
+                    addedAt: new Date(song.addedAt).getTime(),
+                    playlistSongId: song.playlistSongId // Store for deletion
+                }));
+
+                // Separate by playlist type - MUST be exactly 'personal' to go to personal section
+                if (playlistType === 'personal') {
+                    personalPlaylists[playlistName] = songs;
+                    personalPlaylistCount++;
+                    console.log(`[PLAYLIST] ✓ Loaded PERSONAL playlist "${playlistName}" (ID: ${playlist.playlistId}, type: ${playlistType}) with ${songs.length} songs`);
+                } else {
+                    // Room playlist (includes 'room' or any other value)
+                    roomPlaylists[playlistName] = songs;
+                    roomPlaylistCount++;
+                    console.log(`[PLAYLIST] ✓ Loaded ROOM playlist "${playlistName}" (ID: ${playlist.playlistId}, type: ${playlistType}) with ${songs.length} songs`);
+
+                    // Track the default playlist
+                    if (playlist.isDefault) {
+                        defaultPlaylistName = playlistName;
+                        currentPlaylistId = playlist.playlistId;
+                    }
+                }
+            });
+
+            // Ensure default personal playlist exists
+            if (!personalPlaylists['Random']) {
+                personalPlaylists['Random'] = [];
+                // Create default personal playlist in database if it doesn't exist
+                try {
+                    const result = await api.createPlaylist(currentRoomId, 'Random', 'personal');
+                    if (result.success && result.playlist) {
+                        playlistIdMap['Random'] = result.playlist.playlistId;
+                        console.log('[PLAYLIST] Created default "Random" personal playlist in database');
+                    }
+                } catch (err) {
+                    console.error('[PLAYLIST] Failed to create default personal playlist:', err);
+                }
+            }
+
+            // Set the default room playlist as active
+            activePlaylistName = defaultPlaylistName;
+            activePlaylistTab = 'room';
+
+            // Re-render the playlist UI
+            if (typeof renderPlaylist === 'function') {
+                renderPlaylist();
+            }
+
+            console.log(`[PLAYLIST] Loaded ${roomPlaylistCount} room playlists and ${personalPlaylistCount} personal playlists from database`);
+        } else {
+            console.log('[PLAYLIST] No playlists found or empty response');
+
+            // Create default personal playlist if no playlists exist
+            if (!personalPlaylists['Random']) {
+                personalPlaylists['Random'] = [];
+                try {
+                    const result = await api.createPlaylist(currentRoomId, 'Random', 'personal');
+                    if (result.success && result.playlist) {
+                        playlistIdMap['Random'] = result.playlist.playlistId;
+                        console.log('[PLAYLIST] Created default "Random" personal playlist in database');
+                    }
+                } catch (err) {
+                    console.error('[PLAYLIST] Failed to create default personal playlist:', err);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[PLAYLIST] Failed to load playlists:', err);
+    }
+}
+
+// Track room leave
+window.addEventListener('beforeunload', async (e) => {
+    if (!currentRoomId) return;
+
+    const timeSpent = Math.floor((Date.now() - roomStartTime) / 1000);
+
+    // Use sendBeacon for reliable delivery
+    const data = JSON.stringify({
+        timeSpentSeconds: timeSpent
+    });
+
+    const accessToken = localStorage.getItem('accessToken');
+    if (accessToken) {
+        navigator.sendBeacon(
+            `${api.baseURL}/rooms/${currentRoomId}/leave`,
+            new Blob([data], { type: 'application/json' })
+        );
+    }
+});
+
+// Initialize database integration
+async function initDatabaseIntegration() {
+    console.log('[DATABASE] initDatabaseIntegration called, currentRoomId:', currentRoomId);
+    if (!currentRoomId) {
+        console.log('[DATABASE] No room ID, skipping database integration');
+        return;
+    }
+
+    try {
+        console.log('[DATABASE] Starting database integration for room:', currentRoomId);
+
+        // Load message history
+        console.log('[DATABASE] Loading message history...');
+        await loadMessageHistory();
+
+        // Load playlists
+        console.log('[DATABASE] Loading playlists...');
+        await loadPlaylists();
+
+        console.log('[DATABASE] Integration initialized successfully');
+    } catch (err) {
+        console.error('[DATABASE] Failed to initialize:', err);
+    }
+}
+
+// Start database integration after a short delay (let P2P initialize first)
+setTimeout(() => {
+    console.log('[DATABASE] Starting database integration in 2 seconds...');
+    initDatabaseIntegration();
+}, 2000);
 
 // Start Chat DB
 initChatDB();
