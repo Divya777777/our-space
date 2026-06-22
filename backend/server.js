@@ -192,15 +192,22 @@ async function startServer() {
     // Attach PeerJS server to the same HTTP server
     const peerServer = PeerServer({
       server: server,
-      path: process.env.PEERJS_PATH || '/peerjs'
+      path: process.env.PEERJS_PATH || '/peerjs',
+      allow_discovery: true,
+      proxied: true, // Important for Railway deployment
+      debug: NODE_ENV === 'development' ? 2 : 0
     });
 
     peerServer.on('connection', (client) => {
-      console.log(`PeerJS client connected: ${client.id}`);
+      console.log(`✅ PeerJS client connected: ${client.id}`);
     });
 
     peerServer.on('disconnect', (client) => {
-      console.log(`PeerJS client disconnected: ${client.id}`);
+      console.log(`❌ PeerJS client disconnected: ${client.id}`);
+    });
+
+    peerServer.on('error', (error) => {
+      console.error('❌ PeerJS server error:', error);
     });
 
     // Graceful shutdown
