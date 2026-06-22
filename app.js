@@ -54,24 +54,40 @@ function initGoogleSignIn() {
   }
 }
 
-function handleGoogleSignIn(response) {
+async function handleGoogleSignIn(response) {
   try {
-    // Decode JWT payload (no verification needed — we only use name/avatar)
-    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    // Authenticate with backend
+    const result = await api.loginWithGoogle(response.credential);
+
+    if (!result.success) {
+      throw new Error('Backend authentication failed');
+    }
+
+    // Store user data
     currentUser = {
-      name: payload.name || payload.given_name || 'User',
-      email: payload.email || '',
-      avatar: payload.picture || '',
+      name: result.user.displayName,
+      email: result.user.email,
+      avatar: result.user.avatarUrl,
+      userId: result.user.userId
     };
 
-    // Store avatar and email (name will be chosen by user in next step)
+    // Store in localStorage
     localStorage.setItem('ourspace_avatar', currentUser.avatar);
     localStorage.setItem('ourspace_email', currentUser.email);
+    localStorage.setItem('ourspace_userId', currentUser.userId);
+    localStorage.setItem('ourspace_name', currentUser.name);
 
-    showNameStep();
+    // Already authenticated, go straight to room step
+    showRoomStep();
+
+    // Load suggested rooms from database
+    await loadSuggestedRooms();
+
     console.log('[AUTH] Google Sign-In successful:', currentUser.email);
+
   } catch (err) {
-    console.error('[AUTH] Failed to parse Google credential:', err);
+    console.error('[AUTH] Failed to authenticate with backend:', err);
+    alert('Sign-in failed. Please try again.');
   }
 }
 
@@ -126,16 +142,30 @@ function showSignInStep() {
 }
 
 // Check if user is already signed in (page reload)
-function checkExistingSession() {
+async function checkExistingSession() {
   const name = localStorage.getItem('ourspace_name');
-  if (name) {
-    currentUser = {
-      name,
-      avatar: localStorage.getItem('ourspace_avatar') || '',
-      email: localStorage.getItem('ourspace_email') || '',
-    };
-    showRoomStep();
-    return true;
+  const accessToken = localStorage.getItem('accessToken');
+
+  if (name && accessToken) {
+    try {
+      // Verify token with backend
+      const result = await api.verifyToken();
+
+      if (result.success) {
+        currentUser = {
+          name: result.user.displayName,
+          email: result.user.email,
+          avatar: result.user.avatarUrl,
+          userId: result.user.userId
+        };
+        showRoomStep();
+        return true;
+      }
+    } catch (err) {
+      console.log('[AUTH] Session expired, need to sign in again');
+      // Clear invalid tokens
+      api.clearTokens();
+    }
   }
   return false;
 }
@@ -160,7 +190,7 @@ function generateRoomCode() {
 //  ROOM ACTIONS
 // ──────────────────────────────────────────────────────
 
-function enterRoom(roomCode) {
+async function enterRoom(roomCode) {
   const name = currentUser?.name || localStorage.getItem('ourspace_name') || 'You';
   if (!name || name === 'You') return;
   if (!roomCode) return;
@@ -168,16 +198,43 @@ function enterRoom(roomCode) {
   const cleanCode = roomCode.trim().toUpperCase();
   if (cleanCode.length < 4) return;
 
-  saveRecentRoom(name, cleanCode);
-  localStorage.setItem('ourspace_name', name);
+  // Show loading indicator on join button only
+  const joinBtn = document.getElementById('joinBtn');
+  const originalJoinText = joinBtn?.textContent;
+  if (joinBtn) joinBtn.textContent = 'Joining...';
 
-  // Store all user data in sessionStorage for room.js
-  sessionStorage.setItem('ourspace_room', cleanCode);
-  sessionStorage.setItem('ourspace_name', name);
-  sessionStorage.setItem('ourspace_avatar', currentUser?.avatar || localStorage.getItem('ourspace_avatar') || '');
-  sessionStorage.setItem('ourspace_email', currentUser?.email || localStorage.getItem('ourspace_email') || '');
+  try {
+    // Join room via backend API
+    const result = await api.joinRoom(cleanCode);
 
-  window.location.href = 'room.html';
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to join room');
+    }
+
+    // Save to recent rooms (localStorage for quick access)
+    saveRecentRoom(name, cleanCode);
+    localStorage.setItem('ourspace_name', name);
+
+    // Store all user data in sessionStorage for room.js
+    sessionStorage.setItem('currentRoomCode', cleanCode);
+    const roomIdToStore = result.room?.roomId || '';
+    console.log('[JOIN] Storing roomId in sessionStorage:', roomIdToStore, 'from result:', result);
+    sessionStorage.setItem('currentRoomId', roomIdToStore);
+    sessionStorage.setItem('ourspace_name', name);
+    sessionStorage.setItem('ourspace_userId', currentUser?.userId || localStorage.getItem('ourspace_userId') || '');
+    sessionStorage.setItem('ourspace_avatar', currentUser?.avatar || localStorage.getItem('ourspace_avatar') || '');
+    sessionStorage.setItem('ourspace_email', currentUser?.email || localStorage.getItem('ourspace_email') || '');
+
+    // Navigate to room
+    window.location.href = 'room.html';
+
+  } catch (err) {
+    console.error('[ROOM] Failed to join room:', err);
+    alert(err.message || 'Failed to join room. Please try again.');
+
+    // Reset button text
+    if (joinBtn) joinBtn.textContent = originalJoinText;
+  }
 }
 
 // ──────────────────────────────────────────────────────
@@ -225,6 +282,38 @@ window.joinRecent = function (room) {
   }
   enterRoom(room);
 };
+
+// Load suggested rooms from backend
+async function loadSuggestedRooms() {
+  try {
+    const result = await api.getSuggestedRooms(5);
+
+    if (result.success && result.rooms.length > 0) {
+      const section = document.getElementById('recentSection');
+      const container = document.getElementById('recentRooms');
+
+      if (!container) return;
+
+      section.style.display = 'block';
+      container.innerHTML = result.rooms.map(room => `
+        <button class="recent-room-btn" onclick="joinRecent('${escHtml(room.roomCode)}')">
+          <span class="recent-moon">${room.visitInfo.isFavorite ? '⭐' : '🌙'}</span>
+          <div class="recent-info">
+            <div class="recent-room-name">${escHtml(room.roomName || room.roomCode)}</div>
+            <div class="recent-room-code">Visited ${room.visitInfo.visitCount} times</div>
+          </div>
+          <span class="recent-arrow">→</span>
+        </button>
+      `).join('');
+
+      console.log(`[ROOMS] Loaded ${result.rooms.length} suggested rooms from database`);
+    }
+  } catch (err) {
+    console.log('[ROOMS] Could not load suggested rooms:', err);
+    // Fall back to localStorage recent rooms
+    renderRecentRooms();
+  }
+}
 
 // ──────────────────────────────────────────────────────
 //  STAR CANVAS
@@ -286,9 +375,58 @@ document.getElementById('displayNameInput').addEventListener('keydown', e => {
 });
 
 // Create room
-document.getElementById('createBtn').addEventListener('click', () => {
-  const code = generateRoomCode();
-  enterRoom(code);
+document.getElementById('createBtn').addEventListener('click', async () => {
+  console.log('[CREATE] Create button clicked');
+  const name = currentUser?.name || localStorage.getItem('ourspace_name') || 'You';
+  console.log('[CREATE] User name:', name);
+  if (!name || name === 'You') {
+    console.log('[CREATE] No name, returning early');
+    return;
+  }
+
+  const createBtn = document.getElementById('createBtn');
+  const originalText = createBtn?.textContent;
+  if (createBtn) createBtn.textContent = 'Creating...';
+
+  try {
+    console.log('[CREATE] Calling API to create room...');
+    // Create room via backend API
+    const result = await api.createRoom({
+      // Don't send roomName at all if not set
+      maxMembers: 10,
+      isPublic: false,
+      requiresApproval: true
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to create room');
+    }
+
+    const roomCode = result.room.roomCode;
+    const roomId = result.room.roomId;
+    console.log('[CREATE] Created room with code:', roomCode, 'and ID:', roomId);
+
+    // Save to recent rooms
+    saveRecentRoom(name, roomCode);
+    localStorage.setItem('ourspace_name', name);
+
+    // Store all room data in sessionStorage for room.js
+    sessionStorage.setItem('currentRoomCode', roomCode);
+    console.log('[CREATE] Storing roomId in sessionStorage:', roomId);
+    sessionStorage.setItem('currentRoomId', roomId);
+    sessionStorage.setItem('ourspace_name', name);
+    sessionStorage.setItem('ourspace_userId', currentUser?.userId || localStorage.getItem('ourspace_userId') || '');
+    sessionStorage.setItem('ourspace_avatar', currentUser?.avatar || localStorage.getItem('ourspace_avatar') || '');
+    sessionStorage.setItem('ourspace_email', currentUser?.email || localStorage.getItem('ourspace_email') || '');
+
+    // Navigate to room
+    window.location.href = 'room.html';
+
+  } catch (err) {
+    console.error('[ROOM] Failed to create room:', err);
+    alert(err.message || 'Failed to create room. Please try again.');
+    if (createBtn) createBtn.textContent = originalText;
+  }
 });
 
 // Join room
@@ -312,14 +450,21 @@ document.getElementById('signOutBtn').addEventListener('click', showSignInStep);
 renderRecentRooms();
 
 // Check existing session first, then init Google
-if (!checkExistingSession()) {
-  // Wait for Google script to load, then init
-  if (document.readyState === 'complete') {
-    initGoogleSignIn();
+(async function initApp() {
+  const hasSession = await checkExistingSession();
+
+  if (!hasSession) {
+    // Wait for Google script to load, then init
+    if (document.readyState === 'complete') {
+      initGoogleSignIn();
+    } else {
+      window.addEventListener('load', initGoogleSignIn);
+    }
   } else {
-    window.addEventListener('load', initGoogleSignIn);
+    // Load suggested rooms from backend
+    await loadSuggestedRooms();
   }
-}
+})();
 
 // Utility
 function shake(id) {
