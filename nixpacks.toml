@@ -2,10 +2,10 @@
 nixPkgs = ["nodejs_20", "openssl"]
 
 [phases.install]
-cmds = ["pwd", "ls -la", "find . -name 'server.js' -type f", "cd backend && npm install --production=false"]
+cmds = ["ls -la backend/", "test -f backend/server.js && echo 'backend/server.js EXISTS' || echo 'backend/server.js NOT FOUND'", "cd backend && npm install --production=false"]
 
 [phases.build]
 cmds = ["cd backend && npx prisma generate"]
 
 [start]
-cmd = "pwd && ls -la && find . -name 'server.js' -type f && cd backend && npx prisma migrate deploy && node server.js"
+cmd = "ls -la backend/ && cd backend && npx prisma migrate deploy && node server.js"
