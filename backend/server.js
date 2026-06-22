@@ -161,22 +161,9 @@ app.use(async (err, req, res, next) => {
 });
 
 // ====================
-// PeerJS Server Setup
+// PeerJS Server Setup (will be attached to Express server)
 // ====================
-
-const peerServer = PeerServer({
-  port: PEERJS_PORT,
-  path: process.env.PEERJS_PATH || '/peerjs',
-  allow_discovery: false
-});
-
-peerServer.on('connection', (client) => {
-  console.log(`PeerJS client connected: ${client.id}`);
-});
-
-peerServer.on('disconnect', (client) => {
-  console.log(`PeerJS client disconnected: ${client.id}`);
-});
+// PeerJS will be initialized after Express server starts
 
 // ====================
 // Server Startup
@@ -196,10 +183,24 @@ async function startServer() {
       console.log('================================================');
       console.log(`Environment: ${NODE_ENV}`);
       console.log(`API Server: http://localhost:${PORT}`);
-      console.log(`PeerJS Server: http://localhost:${PEERJS_PORT}`);
+      console.log(`PeerJS Server: http://localhost:${PORT}${process.env.PEERJS_PATH || '/peerjs'}`);
       console.log(`Health Check: http://localhost:${PORT}/health`);
       console.log('================================================');
       console.log('');
+    });
+
+    // Attach PeerJS server to the same HTTP server
+    const peerServer = PeerServer({
+      server: server,
+      path: process.env.PEERJS_PATH || '/peerjs'
+    });
+
+    peerServer.on('connection', (client) => {
+      console.log(`PeerJS client connected: ${client.id}`);
+    });
+
+    peerServer.on('disconnect', (client) => {
+      console.log(`PeerJS client disconnected: ${client.id}`);
     });
 
     // Graceful shutdown
