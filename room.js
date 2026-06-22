@@ -731,12 +731,10 @@ async function setupPeer() {
 
     // Configure PeerJS server based on environment
     if (window.location.hostname === 'divya777777.github.io') {
-        // Production: Use Railway backend
-        peerConfig.host = 'our-space-production-30ee.up.railway.app';
-        peerConfig.port = 443;
-        peerConfig.path = '/peerjs';
-        peerConfig.secure = true;
-        console.log('[PEER] Using production PeerJS server at:', `${peerConfig.host}:${peerConfig.port}${peerConfig.path}`);
+        // Production: Use PeerJS cloud server (Railway WebSocket issues)
+        // PeerJS cloud is free and more reliable for WebRTC signaling
+        console.log('[PEER] Using PeerJS cloud server (free, reliable)');
+        // Don't set host/port/path - use PeerJS cloud defaults
     } else if (isLocalServer && window.location.port) {
         // Development: Use local backend
         peerConfig.host = window.location.hostname;
