@@ -2693,6 +2693,30 @@ body {
   transform: translateY(-2px);
 }
 
+.device-select {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(155, 109, 255, 0.3);
+  color: white;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  outline: none;
+  cursor: pointer;
+}
+
+.device-select:focus {
+  border-color: var(--accent-purple);
+  box-shadow: 0 0 10px rgba(155, 109, 255, 0.2);
+}
+
+.device-select option {
+  background: #1a103c;
+  color: white;
+}
+
 /* ── Image Modal ─────────────────────────────────────────── */
 .image-modal {
 

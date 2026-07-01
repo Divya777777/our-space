@@ -1490,20 +1490,18 @@ async function answerIncomingCall(call) {
     const id = call.peer;
     if (!peersMap[id]) return;
 
-    if (localStream) {
-        call.answer(localStream);
-        peersMap[id].callConn = call;
-        call.on('stream', stream => addVideoPanel(id, stream));
-        call.on('close', () => removeVideoPanel(id));
-    } else {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
-            });
-            localStream = stream;
-            myVideo.srcObject = stream;
-            myVideo.classList.add('active');
+        if (localStream) {
+            call.answer(localStream);
+            peersMap[id].callConn = call;
+            call.on('stream', stream => addVideoPanel(id, stream));
+            call.on('close', () => removeVideoPanel(id));
+        } else {
+            try {
+                const constraints = getMediaConstraints();
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                localStream = stream;
+                myVideo.srcObject = stream;
+                myVideo.classList.add('active');
             myPlaceholder.style.display = 'none';
             isInCall = true;
             startCallBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg> End Call`;
@@ -1520,13 +1518,8 @@ async function answerIncomingCall(call) {
 
 async function startCall() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: {
-                noiseSuppression: true, echoCancellation: true, autoGainControl: true,
-                googEchoCancellation: true, googAutoGainControl: true, googNoiseSuppression: true, googHighpassFilter: true
-            }
-        });
+        const constraints = getMediaConstraints();
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
         myVideo.srcObject = localStream;
         myVideo.classList.add('active');
         myPlaceholder.style.display = 'none';
@@ -1587,7 +1580,19 @@ function addVideoPanel(id, stream) {
         });
     }
     const vid = document.getElementById(`video_${id}`);
-    if (vid) vid.srcObject = stream;
+    if (vid) {
+        vid.srcObject = stream;
+        
+        // Apply selected speaker if available
+        const selectedAudioOutput = localStorage.getItem('ourspace_audio_out');
+        if (selectedAudioOutput && selectedAudioOutput !== 'default' && typeof vid.setSinkId !== 'undefined') {
+            try {
+                vid.setSinkId(selectedAudioOutput);
+            } catch (e) {
+                console.warn('Cannot set sink id for new video', e);
+            }
+        }
+    }
     document.querySelector('.video-grid').classList.remove('alone');
 }
 
@@ -1656,7 +1661,155 @@ function renderChatRecipientDropdown() {
     if (currVal && Array.from(sel.options).find(o => o.value === currVal)) {
         sel.value = currVal;
     }
+    }
 }
+
+// ─────────────────────────────────────────────────────
+//  DEVICE SETTINGS
+// ─────────────────────────────────────────────────────
+const settingsBtn = document.getElementById('settingsBtn');
+const deviceModal = document.getElementById('deviceModal');
+const audioInputSelect = document.getElementById('audioInputSelect');
+const audioOutputSelect = document.getElementById('audioOutputSelect');
+const videoInputSelect = document.getElementById('videoInputSelect');
+const saveDeviceBtn = document.getElementById('saveDeviceBtn');
+
+let selectedAudioInput = localStorage.getItem('ourspace_audio_in') || 'default';
+let selectedAudioOutput = localStorage.getItem('ourspace_audio_out') || 'default';
+let selectedVideoInput = localStorage.getItem('ourspace_video_in') || 'default';
+
+function getMediaConstraints() {
+    const audioConstraints = {
+        noiseSuppression: true, echoCancellation: true, autoGainControl: true,
+        googEchoCancellation: true, googAutoGainControl: true, googNoiseSuppression: true, googHighpassFilter: true
+    };
+    if (selectedAudioInput && selectedAudioInput !== 'default') {
+        audioConstraints.deviceId = { exact: selectedAudioInput };
+    }
+    
+    const videoConstraints = true;
+    if (selectedVideoInput && selectedVideoInput !== 'default') {
+        return { video: { deviceId: { exact: selectedVideoInput } }, audio: audioConstraints };
+    }
+    
+    return { video: videoConstraints, audio: audioConstraints };
+}
+
+async function populateDeviceLists() {
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); // request permissions first
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        audioInputSelect.innerHTML = '<option value="default">Default</option>';
+        audioOutputSelect.innerHTML = '<option value="default">Default</option>';
+        videoInputSelect.innerHTML = '<option value="default">Default</option>';
+
+        devices.forEach(device => {
+            if (!device.deviceId) return;
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.text = device.label || `${device.kind} (${device.deviceId.substring(0, 5)}...)`;
+            
+            if (device.kind === 'audioinput') {
+                audioInputSelect.appendChild(option);
+            } else if (device.kind === 'audiooutput') {
+                audioOutputSelect.appendChild(option);
+            } else if (device.kind === 'videoinput') {
+                videoInputSelect.appendChild(option);
+            }
+        });
+
+        if (selectedAudioInput) audioInputSelect.value = selectedAudioInput;
+        if (selectedAudioOutput) audioOutputSelect.value = selectedAudioOutput;
+        if (selectedVideoInput) videoInputSelect.value = selectedVideoInput;
+        
+    } catch (e) {
+        console.error('Error enumerating devices', e);
+        toast('Please allow camera/mic permissions to see devices', 'error');
+    }
+}
+
+async function applyDeviceSettings() {
+    selectedAudioInput = audioInputSelect.value;
+    selectedAudioOutput = audioOutputSelect.value;
+    selectedVideoInput = videoInputSelect.value;
+
+    localStorage.setItem('ourspace_audio_in', selectedAudioInput);
+    localStorage.setItem('ourspace_audio_out', selectedAudioOutput);
+    localStorage.setItem('ourspace_video_in', selectedVideoInput);
+
+    // Apply output speaker to all remote videos
+    if (typeof HTMLMediaElement.prototype.setSinkId !== 'undefined') {
+        const videos = document.querySelectorAll('video');
+        for (let v of videos) {
+            if (v.id !== 'myVideo') {
+                try {
+                    await v.setSinkId(selectedAudioOutput === 'default' ? '' : selectedAudioOutput);
+                } catch (e) {
+                    console.warn('Cannot set sink id', e);
+                }
+            }
+        }
+    }
+
+    if (isInCall && localStream) {
+        try {
+            const constraints = getMediaConstraints();
+            const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Replace tracks for local video
+            myVideo.srcObject = newStream;
+            
+            // Replace tracks for all active peer connections
+            const newAudioTrack = newStream.getAudioTracks()[0];
+            const newVideoTrack = newStream.getVideoTracks()[0];
+            
+            // Restore previous mute states
+            if (newAudioTrack) newAudioTrack.enabled = !isMuted;
+            if (newVideoTrack) newVideoTrack.enabled = !isVideoOff;
+
+            Object.values(peersMap).forEach(p => {
+                if (p.callConn && p.callConn.peerConnection) {
+                    const senders = p.callConn.peerConnection.getSenders();
+                    const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+                    const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                    
+                    if (audioSender && newAudioTrack) audioSender.replaceTrack(newAudioTrack);
+                    if (videoSender && newVideoTrack) videoSender.replaceTrack(newVideoTrack);
+                }
+            });
+
+            // Stop old tracks
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = newStream;
+            toast('Device settings updated', 'success');
+        } catch (e) {
+            console.error('Error applying devices', e);
+            toast('Failed to change devices', 'error');
+        }
+    } else {
+        toast('Settings saved', 'success');
+    }
+}
+
+if (settingsBtn) {
+    settingsBtn.addEventListener('click', async () => {
+        await populateDeviceLists();
+        deviceModal.classList.add('show');
+    });
+}
+
+if (saveDeviceBtn) {
+    saveDeviceBtn.addEventListener('click', () => {
+        applyDeviceSettings();
+        deviceModal.classList.remove('show');
+    });
+}
+
+deviceModal.addEventListener('click', e => {
+    if (e.target === deviceModal) deviceModal.classList.remove('show');
+});
+
 
 muteBtn.addEventListener('click', () => {
     if (!localStream) return;
