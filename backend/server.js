@@ -170,45 +170,75 @@ app.use(async (err, req, res, next) => {
 // ====================
 
 async function startServer() {
+  // Startup diagnostics
+  console.log('');
+  console.log('================================================');
+  console.log('🔍 Startup Diagnostics');
+  console.log('================================================');
+  console.log(`NODE_ENV: ${NODE_ENV}`);
+  console.log(`PORT: ${PORT}`);
+  console.log(`DATABASE_URL set: ${!!process.env.DATABASE_URL}`);
+  console.log(`JWT_SECRET set: ${!!process.env.JWT_SECRET}`);
+  console.log(`GOOGLE_CLIENT_ID set: ${!!process.env.GOOGLE_CLIENT_ID}`);
+  console.log(`CORS_ORIGIN: ${process.env.CORS_ORIGIN || '(not set, using defaults)'}`);
+  console.log('================================================');
+  console.log('');
+
   try {
     // Test database connection
+    console.log('⏳ Connecting to database...');
     await prisma.$connect();
     console.log('✅ Database connected successfully');
 
-    // Start Express server
-    const server = app.listen(PORT, () => {
+    // Start Express server — bind to 0.0.0.0 for Railway
+    const HOST = process.env.HOST || '0.0.0.0';
+    const server = app.listen(PORT, HOST, () => {
       console.log('');
       console.log('================================================');
       console.log('🚀 Our Space Backend Server');
       console.log('================================================');
       console.log(`Environment: ${NODE_ENV}`);
-      console.log(`API Server: http://localhost:${PORT}`);
-      console.log(`PeerJS Server: http://localhost:${PORT}${process.env.PEERJS_PATH || '/peerjs'}`);
-      console.log(`Health Check: http://localhost:${PORT}/health`);
+      console.log(`Listening on: ${HOST}:${PORT}`);
+      console.log(`PeerJS Server: http://${HOST}:${PORT}${process.env.PEERJS_PATH || '/peerjs'}`);
+      console.log(`Health Check: http://${HOST}:${PORT}/health`);
       console.log('================================================');
       console.log('');
     });
 
-    // Attach PeerJS server to the same HTTP server
-    const peerServer = PeerServer({
-      server: server,
-      path: process.env.PEERJS_PATH || '/peerjs',
-      allow_discovery: true,
-      proxied: true, // Important for Railway deployment
-      debug: NODE_ENV === 'development' ? 2 : 0
+    server.on('error', (error) => {
+      console.error('❌ HTTP Server error:', error);
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use!`);
+      }
+      process.exit(1);
     });
 
-    peerServer.on('connection', (client) => {
-      console.log(`✅ PeerJS client connected: ${client.id}`);
-    });
+    // Attach PeerJS server to the same HTTP server (non-fatal if it fails)
+    try {
+      const peerServer = PeerServer({
+        server: server,
+        path: process.env.PEERJS_PATH || '/peerjs',
+        allow_discovery: true,
+        proxied: true, // Important for Railway deployment
+        debug: NODE_ENV === 'development' ? 2 : 0
+      });
 
-    peerServer.on('disconnect', (client) => {
-      console.log(`❌ PeerJS client disconnected: ${client.id}`);
-    });
+      peerServer.on('connection', (client) => {
+        console.log(`✅ PeerJS client connected: ${client.id}`);
+      });
 
-    peerServer.on('error', (error) => {
-      console.error('❌ PeerJS server error:', error);
-    });
+      peerServer.on('disconnect', (client) => {
+        console.log(`❌ PeerJS client disconnected: ${client.id}`);
+      });
+
+      peerServer.on('error', (error) => {
+        console.error('❌ PeerJS server error:', error);
+      });
+
+      console.log('✅ PeerJS server attached');
+    } catch (peerError) {
+      console.error('⚠️ PeerJS server failed to initialize (non-fatal):', peerError.message);
+    }
 
     // Graceful shutdown
     const gracefulShutdown = async (signal) => {
@@ -236,11 +266,23 @@ async function startServer() {
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   } catch (error) {
-    console.error('Failed to start server:', error);
-    await prisma.$disconnect();
+    console.error('❌ Failed to start server:', error);
+    console.error('Stack:', error.stack);
+    try { await prisma.$disconnect(); } catch (e) { /* ignore */ }
     process.exit(1);
   }
 }
+
+// Catch any uncaught errors during startup
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled Rejection:', reason);
+  process.exit(1);
+});
 
 // Start the server
 startServer();
