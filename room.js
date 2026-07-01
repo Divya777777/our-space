@@ -2856,14 +2856,26 @@ async function loadPlaylists() {
                 }
             });
 
-            // Ensure default personal playlist exists
-            if (!personalPlaylists['Random']) {
-                personalPlaylists['Random'] = [];
-                // Create default personal playlist in database if it doesn't exist
+            // Ensure default playlists exist in the database
+            if (!playlistIdMap['Room Playlist']) {
+                try {
+                    const result = await api.createPlaylist(currentRoomId, 'Room Playlist', 'room');
+                    if (result.success && result.playlist) {
+                        playlistIdMap['Room Playlist'] = result.playlist.playlistId;
+                        roomPlaylists['Room Playlist'] = [];
+                        console.log('[PLAYLIST] Created default "Room Playlist" in database');
+                    }
+                } catch (err) {
+                    console.error('[PLAYLIST] Failed to create default room playlist:', err);
+                }
+            }
+
+            if (!playlistIdMap['Random']) {
                 try {
                     const result = await api.createPlaylist(currentRoomId, 'Random', 'personal');
                     if (result.success && result.playlist) {
                         playlistIdMap['Random'] = result.playlist.playlistId;
+                        personalPlaylists['Random'] = [];
                         console.log('[PLAYLIST] Created default "Random" personal playlist in database');
                     }
                 } catch (err) {
@@ -2884,18 +2896,27 @@ async function loadPlaylists() {
         } else {
             console.log('[PLAYLIST] No playlists found or empty response');
 
-            // Create default personal playlist if no playlists exist
-            if (!personalPlaylists['Random']) {
-                personalPlaylists['Random'] = [];
+            // Create default playlists if no playlists exist at all
+            if (!playlistIdMap['Room Playlist']) {
+                try {
+                    const result = await api.createPlaylist(currentRoomId, 'Room Playlist', 'room');
+                    if (result.success && result.playlist) {
+                        playlistIdMap['Room Playlist'] = result.playlist.playlistId;
+                        roomPlaylists['Room Playlist'] = [];
+                        console.log('[PLAYLIST] Created default "Room Playlist" in database');
+                    }
+                } catch (err) {}
+            }
+
+            if (!playlistIdMap['Random']) {
                 try {
                     const result = await api.createPlaylist(currentRoomId, 'Random', 'personal');
                     if (result.success && result.playlist) {
                         playlistIdMap['Random'] = result.playlist.playlistId;
+                        personalPlaylists['Random'] = [];
                         console.log('[PLAYLIST] Created default "Random" personal playlist in database');
                     }
-                } catch (err) {
-                    console.error('[PLAYLIST] Failed to create default personal playlist:', err);
-                }
+                } catch (err) {}
             }
         }
     } catch (err) {
