@@ -1696,7 +1696,10 @@ function getMediaConstraints() {
 
 async function populateDeviceLists() {
     try {
-        await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); // request permissions first
+        // Request permissions first to get device labels and IDs
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); 
+        tempStream.getTracks().forEach(t => t.stop());
+        
         const devices = await navigator.mediaDevices.enumerateDevices();
         
         audioInputSelect.innerHTML = '<option value="default">Default</option>';
